@@ -3,7 +3,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Pencil, Trash2, UserCheck, Search, X, BookOpen, School, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, School, Eye } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface Teacher {
@@ -30,16 +30,8 @@ interface Teacher {
   classes: { class_id: string; class_name: string; subject_id: string; subject_name: string; is_principal: boolean }[];
 }
 
-interface Subject {
-  id: string;
-  name: string;
-}
-
-interface Class {
-  id: string;
-  name: string;
-  level: string;
-}
+interface Subject { id: string; name: string; }
+interface Class { id: string; name: string; level: string; }
 
 const Enseignants = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -54,38 +46,22 @@ const Enseignants = () => {
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   
   const [editFormData, setEditFormData] = useState({
-    firstName: "",
-    lastName: "",
-    phone: "",
-    employeeId: "",
+    firstName: "", lastName: "", phone: "", employeeId: "",
   });
   const [editSpecialties, setEditSpecialties] = useState<string[]>([]);
-  // Form state
   const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    password: "",
-    employeeId: "",
+    firstName: "", lastName: "", email: "", phone: "", employeeId: "",
   });
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
-  
-  // Assignment state
   const [assignmentData, setAssignmentData] = useState({
-    classId: "",
-    subjectId: "",
-    isPrincipal: false,
+    classId: "", subjectId: "", isPrincipal: false,
   });
 
   const fetchTeachers = async () => {
     setLoading(true);
     const { data: teachersData, error } = await supabase
       .from('teachers')
-      .select(`
-        id, user_id, profile_id, employee_id, is_active,
-        profiles!teachers_profile_id_fkey (first_name, last_name, email, phone)
-      `)
+      .select('id, user_id, profile_id, employee_id, is_active, profiles!teachers_profile_id_fkey (first_name, last_name, email, phone)')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -94,7 +70,6 @@ const Enseignants = () => {
       return;
     }
 
-    // Fetch specialties and classes for each teacher
     const teachersWithDetails = await Promise.all(
       (teachersData || []).map(async (teacher) => {
         const { data: specialtiesData } = await supabase
@@ -111,20 +86,16 @@ const Enseignants = () => {
           ...teacher,
           profile: teacher.profiles,
           specialties: (specialtiesData || []).map((s: any) => ({
-            subject_id: s.subject_id,
-            subject_name: s.subjects?.name || '',
+            subject_id: s.subject_id, subject_name: s.subjects?.name || '',
           })),
           classes: (classesData || []).map((c: any) => ({
-            class_id: c.class_id,
-            class_name: c.classes?.name || '',
-            subject_id: c.subject_id,
-            subject_name: c.subjects?.name || '',
+            class_id: c.class_id, class_name: c.classes?.name || '',
+            subject_id: c.subject_id, subject_name: c.subjects?.name || '',
             is_principal: c.is_principal,
           })),
         };
       })
     );
-
     setTeachers(teachersWithDetails as Teacher[]);
     setLoading(false);
   };
@@ -134,7 +105,6 @@ const Enseignants = () => {
       supabase.from('subjects').select('id, name').eq('is_active', true).order('name'),
       supabase.from('classes').select('id, name, level').eq('is_active', true).order('name'),
     ]);
-
     if (subjectsRes.data) setSubjects(subjectsRes.data);
     if (classesRes.data) setClasses(classesRes.data);
   };
@@ -145,7 +115,7 @@ const Enseignants = () => {
   }, []);
 
   const handleCreateTeacher = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
+    if (!formData.firstName || !formData.lastName || !formData.email) {
       toast({ title: "Erreur", description: "Veuillez remplir tous les champs obligatoires", variant: "destructive" });
       return;
     }
@@ -153,19 +123,14 @@ const Enseignants = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        toast({ title: "Erreur", description: "Session expirée, veuillez vous reconnecter", variant: "destructive" });
+        toast({ title: "Erreur", description: "Session expirée", variant: "destructive" });
         return;
       }
 
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
-          email: formData.email,
-          password: formData.password,
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          phone: formData.phone || null,
-          userType: 'teacher',
-          employeeId: formData.employeeId || null,
+          email: formData.email, firstName: formData.firstName, lastName: formData.lastName,
+          phone: formData.phone || null, userType: 'teacher', employeeId: formData.employeeId || null,
           specialties: selectedSpecialties,
         },
       });
@@ -173,7 +138,7 @@ const Enseignants = () => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      toast({ title: "Succès", description: "Enseignant créé avec succès" });
+      toast({ title: "Enseignant créé", description: `Mot de passe: ${data.generatedPassword}` });
       setIsCreateDialogOpen(false);
       resetForm();
       fetchTeachers();
@@ -184,45 +149,32 @@ const Enseignants = () => {
 
   const handleAssignClass = async () => {
     if (!selectedTeacher || !assignmentData.classId || !assignmentData.subjectId) {
-      toast({ title: "Erreur", description: "Veuillez sélectionner une classe et une matière", variant: "destructive" });
+      toast({ title: "Erreur", description: "Sélectionnez classe et matière", variant: "destructive" });
       return;
     }
 
     try {
-      // Check if teacher already teaches in this class
       const { data: existing } = await supabase
-        .from('teacher_classes')
-        .select('id')
-        .eq('teacher_id', selectedTeacher.id)
-        .eq('class_id', assignmentData.classId)
-        .maybeSingle();
+        .from('teacher_classes').select('id')
+        .eq('teacher_id', selectedTeacher.id).eq('class_id', assignmentData.classId).maybeSingle();
 
       if (existing) {
-        toast({ title: "Erreur", description: "Cet enseignant enseigne déjà dans cette classe", variant: "destructive" });
+        toast({ title: "Erreur", description: "Déjà assigné", variant: "destructive" });
         return;
       }
 
-      // If setting as principal, remove existing principal for this class
       if (assignmentData.isPrincipal) {
-        await supabase
-          .from('teacher_classes')
-          .update({ is_principal: false })
-          .eq('class_id', assignmentData.classId)
-          .eq('is_principal', true);
+        await supabase.from('teacher_classes').update({ is_principal: false })
+          .eq('class_id', assignmentData.classId).eq('is_principal', true);
       }
 
-      const { error } = await supabase
-        .from('teacher_classes')
-        .insert({
-          teacher_id: selectedTeacher.id,
-          class_id: assignmentData.classId,
-          subject_id: assignmentData.subjectId,
-          is_principal: assignmentData.isPrincipal,
-        });
+      const { error } = await supabase.from('teacher_classes').insert({
+        teacher_id: selectedTeacher.id, class_id: assignmentData.classId,
+        subject_id: assignmentData.subjectId, is_principal: assignmentData.isPrincipal,
+      });
 
       if (error) throw error;
-
-      toast({ title: "Succès", description: "Classe assignée avec succès" });
+      toast({ title: "Succès", description: "Classe assignée" });
       setIsAssignDialogOpen(false);
       setAssignmentData({ classId: "", subjectId: "", isPrincipal: false });
       fetchTeachers();
@@ -233,37 +185,8 @@ const Enseignants = () => {
 
   const handleRemoveClassAssignment = async (teacherId: string, classId: string) => {
     try {
-      const { error } = await supabase
-        .from('teacher_classes')
-        .delete()
-        .eq('teacher_id', teacherId)
-        .eq('class_id', classId);
-
-      if (error) throw error;
-
+      await supabase.from('teacher_classes').delete().eq('teacher_id', teacherId).eq('class_id', classId);
       toast({ title: "Succès", description: "Assignation supprimée" });
-      fetchTeachers();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
-  };
-
-  const handleToggleActive = async (teacher: Teacher) => {
-    try {
-      const { error } = await supabase
-        .from('teachers')
-        .update({ is_active: !teacher.is_active })
-        .eq('id', teacher.id);
-
-      if (error) throw error;
-
-      // Also update profile
-      await supabase
-        .from('profiles')
-        .update({ is_active: !teacher.is_active })
-        .eq('id', teacher.profile_id);
-
-      toast({ title: "Succès", description: teacher.is_active ? "Enseignant désactivé" : "Enseignant activé" });
       fetchTeachers();
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
@@ -272,16 +195,11 @@ const Enseignants = () => {
 
   const handleDeleteTeacher = async (teacher: Teacher) => {
     try {
-      // Delete teacher_classes
       await supabase.from('teacher_classes').delete().eq('teacher_id', teacher.id);
-      // Delete teacher_specialties
       await supabase.from('teacher_specialties').delete().eq('teacher_id', teacher.id);
-      // Delete teacher
       await supabase.from('teachers').delete().eq('id', teacher.id);
-      // Delete profile
       await supabase.from('profiles').delete().eq('id', teacher.profile_id);
-
-      toast({ title: "Succès", description: "Enseignant supprimé avec succès" });
+      toast({ title: "Succès", description: "Supprimé" });
       fetchTeachers();
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
@@ -290,36 +208,23 @@ const Enseignants = () => {
 
   const handleEditTeacher = async () => {
     if (!selectedTeacher) return;
-
     try {
-      // Update profile
-      await supabase
-        .from('profiles')
-        .update({
-          first_name: editFormData.firstName,
-          last_name: editFormData.lastName,
-          phone: editFormData.phone || null,
-        })
-        .eq('id', selectedTeacher.profile_id);
+      await supabase.from('profiles').update({
+        first_name: editFormData.firstName, last_name: editFormData.lastName,
+        phone: editFormData.phone || null,
+      }).eq('id', selectedTeacher.profile_id);
 
-      // Update teacher
-      await supabase
-        .from('teachers')
-        .update({ employee_id: editFormData.employeeId || null })
+      await supabase.from('teachers').update({ employee_id: editFormData.employeeId || null })
         .eq('id', selectedTeacher.id);
 
-      // Update specialties
       await supabase.from('teacher_specialties').delete().eq('teacher_id', selectedTeacher.id);
       if (editSpecialties.length > 0) {
         await supabase.from('teacher_specialties').insert(
-          editSpecialties.map(subjectId => ({
-            teacher_id: selectedTeacher.id,
-            subject_id: subjectId,
-          }))
+          editSpecialties.map(sid => ({ teacher_id: selectedTeacher.id, subject_id: sid }))
         );
       }
 
-      toast({ title: "Succès", description: "Enseignant modifié avec succès" });
+      toast({ title: "Succès", description: "Modifié" });
       setIsEditDialogOpen(false);
       fetchTeachers();
     } catch (error: any) {
@@ -330,112 +235,71 @@ const Enseignants = () => {
   const openEditDialog = (teacher: Teacher) => {
     setSelectedTeacher(teacher);
     setEditFormData({
-      firstName: teacher.profile.first_name,
-      lastName: teacher.profile.last_name,
-      phone: teacher.profile.phone || "",
-      employeeId: teacher.employee_id || "",
+      firstName: teacher.profile.first_name, lastName: teacher.profile.last_name,
+      phone: teacher.profile.phone || "", employeeId: teacher.employee_id || "",
     });
     setEditSpecialties(teacher.specialties.map(s => s.subject_id));
     setIsEditDialogOpen(true);
   };
 
   const resetForm = () => {
-    setFormData({ firstName: "", lastName: "", email: "", phone: "", password: "", employeeId: "" });
+    setFormData({ firstName: "", lastName: "", email: "", phone: "", employeeId: "" });
     setSelectedSpecialties([]);
   };
 
-  const filteredTeachers = teachers.filter(teacher =>
-    `${teacher.profile.first_name} ${teacher.profile.last_name} ${teacher.profile.email}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
+  const filteredTeachers = teachers.filter(t =>
+    `${t.profile.first_name} ${t.profile.last_name} ${t.profile.email}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Enseignants</h1>
-            <p className="text-muted-foreground">Gérez les enseignants de l'établissement</p>
+            <h1 className="text-3xl font-bold">Enseignants</h1>
+            <p className="text-muted-foreground">Gérez les enseignants</p>
           </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="w-4 h-4" />
-                Nouvel enseignant
-              </Button>
+              <Button className="gap-2"><Plus className="w-4 h-4" />Nouvel enseignant</Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Créer un enseignant</DialogTitle>
-              </DialogHeader>
+              <DialogHeader><DialogTitle>Créer un enseignant</DialogTitle></DialogHeader>
               <div className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Prénom *</Label>
-                    <Input 
-                      value={formData.firstName} 
-                      onChange={e => setFormData({...formData, firstName: e.target.value})} 
-                    />
+                  <div><Label>Prénom *</Label>
+                    <Input value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} />
                   </div>
-                  <div>
-                    <Label>Nom *</Label>
-                    <Input 
-                      value={formData.lastName} 
-                      onChange={e => setFormData({...formData, lastName: e.target.value})} 
-                    />
+                  <div><Label>Nom *</Label>
+                    <Input value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} />
                   </div>
                 </div>
-                <div>
-                  <Label>Email *</Label>
-                  <Input 
-                    type="email" 
-                    value={formData.email} 
-                    onChange={e => setFormData({...formData, email: e.target.value})} 
-                  />
+                <div><Label>Email *</Label>
+                  <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                  <p className="text-xs text-muted-foreground mt-1">Mot de passe généré automatiquement</p>
+                </div>
+                <div><Label>Téléphone</Label>
+                  <Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                </div>
+                <div><Label>Matricule</Label>
+                  <Input value={formData.employeeId} onChange={e => setFormData({...formData, employeeId: e.target.value})} />
                 </div>
                 <div>
-                  <Label>Mot de passe *</Label>
-                  <Input 
-                    type="password" 
-                    value={formData.password} 
-                    onChange={e => setFormData({...formData, password: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <Label>Téléphone</Label>
-                  <Input 
-                    value={formData.phone} 
-                    onChange={e => setFormData({...formData, phone: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <Label>Matricule employé</Label>
-                  <Input 
-                    value={formData.employeeId} 
-                    onChange={e => setFormData({...formData, employeeId: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <Label>Spécialités (matières)</Label>
+                  <Label>Spécialités</Label>
                   {subjects.length === 0 ? (
-                    <p className="text-sm text-muted-foreground mt-2">Aucune matière disponible. Créez des matières d'abord.</p>
+                    <p className="text-sm text-muted-foreground mt-2">Créez des matières d'abord</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                      {subjects.map(subject => (
-                        <label key={subject.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      {subjects.map(sub => (
+                        <label key={sub.id} className="flex items-center gap-2 text-sm cursor-pointer">
                           <Checkbox
-                            checked={selectedSpecialties.includes(subject.id)}
+                            checked={selectedSpecialties.includes(sub.id)}
                             onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedSpecialties([...selectedSpecialties, subject.id]);
-                              } else {
-                                setSelectedSpecialties(selectedSpecialties.filter(id => id !== subject.id));
-                              }
+                              if (checked) setSelectedSpecialties([...selectedSpecialties, sub.id]);
+                              else setSelectedSpecialties(selectedSpecialties.filter(id => id !== sub.id));
                             }}
                           />
-                          {subject.name}
+                          {sub.name}
                         </label>
                       ))}
                     </div>
@@ -447,18 +311,11 @@ const Enseignants = () => {
           </Dialog>
         </div>
 
-        {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Rechercher un enseignant..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+          <Input placeholder="Rechercher..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
         </div>
 
-        {/* Table */}
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -473,17 +330,9 @@ const Enseignants = () => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      Chargement...
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8">Chargement...</TableCell></TableRow>
                 ) : filteredTeachers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      Aucun enseignant trouvé
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8">Aucun enseignant</TableCell></TableRow>
                 ) : (
                   filteredTeachers.map(teacher => (
                     <TableRow key={teacher.id}>
@@ -491,17 +340,13 @@ const Enseignants = () => {
                         <div>
                           <p className="font-medium">{teacher.profile.first_name} {teacher.profile.last_name}</p>
                           <p className="text-sm text-muted-foreground">{teacher.profile.email}</p>
-                          {teacher.employee_id && (
-                            <p className="text-xs text-muted-foreground">ID: {teacher.employee_id}</p>
-                          )}
+                          {teacher.employee_id && <p className="text-xs text-muted-foreground">ID: {teacher.employee_id}</p>}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {teacher.specialties.map(s => (
-                            <Badge key={s.subject_id} variant="secondary" className="text-xs">
-                              {s.subject_name}
-                            </Badge>
+                            <Badge key={s.subject_id} variant="secondary" className="text-xs">{s.subject_name}</Badge>
                           ))}
                         </div>
                       </TableCell>
@@ -510,13 +355,10 @@ const Enseignants = () => {
                           {teacher.classes.map(c => (
                             <div key={`${c.class_id}-${c.subject_id}`} className="flex items-center gap-2">
                               <Badge variant={c.is_principal ? "default" : "outline"} className="text-xs">
-                                {c.class_name} - {c.subject_name}
-                                {c.is_principal && " (PP)"}
+                                {c.class_name} - {c.subject_name}{c.is_principal && " (PP)"}
                               </Badge>
-                              <button
-                                onClick={() => handleRemoveClassAssignment(teacher.id, c.class_id)}
-                                className="text-destructive hover:text-destructive/80"
-                              >
+                              <button onClick={() => handleRemoveClassAssignment(teacher.id, c.class_id)}
+                                className="text-destructive hover:text-destructive/80">
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
@@ -530,36 +372,14 @@ const Enseignants = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedTeacher(teacher);
-                              setIsViewDialogOpen(true);
-                            }}
-                            title="Voir"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(teacher)}
-                            title="Modifier"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedTeacher(teacher);
-                              setIsAssignDialogOpen(true);
-                            }}
-                            title="Assigner une classe"
-                          >
-                            <School className="w-4 h-4" />
-                          </Button>
+                          <Button variant="ghost" size="icon"
+                            onClick={() => { setSelectedTeacher(teacher); setIsViewDialogOpen(true); }}
+                            title="Voir"><Eye className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(teacher)}
+                            title="Modifier"><Pencil className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="icon"
+                            onClick={() => { setSelectedTeacher(teacher); setIsAssignDialogOpen(true); }}
+                            title="Assigner"><School className="w-4 h-4" /></Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" title="Supprimer">
@@ -568,16 +388,14 @@ const Enseignants = () => {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Supprimer l'enseignant</AlertDialogTitle>
+                                <AlertDialogTitle>Supprimer</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Êtes-vous sûr de vouloir supprimer {teacher.profile.first_name} {teacher.profile.last_name} ? Cette action est irréversible.
+                                  Supprimer {teacher.profile.first_name} {teacher.profile.last_name} ?
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Annuler</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteTeacher(teacher)}>
-                                  Supprimer
-                                </AlertDialogAction>
+                                <AlertDialogAction onClick={() => handleDeleteTeacher(teacher)}>Supprimer</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -591,180 +409,106 @@ const Enseignants = () => {
           </CardContent>
         </Card>
 
-        {/* Assign Class Dialog */}
+        {/* Dialogs suite dans commentaire */}
         <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                Assigner une classe à {selectedTeacher?.profile.first_name} {selectedTeacher?.profile.last_name}
-              </DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Assigner - {selectedTeacher?.profile.first_name}</DialogTitle></DialogHeader>
             <div className="space-y-4 mt-4">
-              <div>
-                <Label>Classe</Label>
+              <div><Label>Classe</Label>
                 <Select value={assignmentData.classId} onValueChange={v => setAssignmentData({...assignmentData, classId: v})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner une classe" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {classes.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name} ({c.level})</SelectItem>
-                    ))}
+                    {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.level})</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Matière enseignée dans cette classe</Label>
+              <div><Label>Matière</Label>
                 <Select value={assignmentData.subjectId} onValueChange={v => setAssignmentData({...assignmentData, subjectId: v})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner une matière" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {subjects.length > 0 ? (
-                      subjects.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>Aucune matière disponible</SelectItem>
-                    )}
+                    {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Spécialités de l'enseignant: {selectedTeacher?.specialties.map(s => s.subject_name).join(', ') || 'Aucune'}
-                </p>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={assignmentData.isPrincipal}
-                  onCheckedChange={(checked) => setAssignmentData({...assignmentData, isPrincipal: !!checked})}
-                />
-                <span className="text-sm">Professeur principal de cette classe</span>
+                <Checkbox checked={assignmentData.isPrincipal}
+                  onCheckedChange={(checked) => setAssignmentData({...assignmentData, isPrincipal: !!checked})} />
+                <span className="text-sm">Professeur principal</span>
               </label>
               <Button onClick={handleAssignClass} className="w-full">Assigner</Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* View Teacher Dialog */}
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Détails de l'enseignant</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Détails</DialogTitle></DialogHeader>
             {selectedTeacher && (
               <div className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-muted-foreground">Prénom</Label>
-                    <p className="font-medium">{selectedTeacher.profile.first_name}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Nom</Label>
-                    <p className="font-medium">{selectedTeacher.profile.last_name}</p>
-                  </div>
+                  <div><Label className="text-muted-foreground">Prénom</Label>
+                    <p className="font-medium">{selectedTeacher.profile.first_name}</p></div>
+                  <div><Label className="text-muted-foreground">Nom</Label>
+                    <p className="font-medium">{selectedTeacher.profile.last_name}</p></div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Email</Label>
-                  <p className="font-medium">{selectedTeacher.profile.email}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Téléphone</Label>
-                  <p className="font-medium">{selectedTeacher.profile.phone || "Non renseigné"}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Matricule</Label>
-                  <p className="font-medium">{selectedTeacher.employee_id || "Non renseigné"}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Spécialités</Label>
+                <div><Label className="text-muted-foreground">Email</Label>
+                  <p className="font-medium">{selectedTeacher.profile.email}</p></div>
+                <div><Label className="text-muted-foreground">Téléphone</Label>
+                  <p className="font-medium">{selectedTeacher.profile.phone || "Non renseigné"}</p></div>
+                <div><Label className="text-muted-foreground">Matricule</Label>
+                  <p className="font-medium">{selectedTeacher.employee_id || "Non renseigné"}</p></div>
+                <div><Label className="text-muted-foreground">Spécialités</Label>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {selectedTeacher.specialties.length > 0 ? (
-                      selectedTeacher.specialties.map(s => (
-                        <Badge key={s.subject_id} variant="secondary">{s.subject_name}</Badge>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-sm">Aucune spécialité</p>
-                    )}
+                      selectedTeacher.specialties.map(s => <Badge key={s.subject_id} variant="secondary">{s.subject_name}</Badge>)
+                    ) : <p className="text-sm">Aucune</p>}
                   </div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Classes assignées</Label>
+                <div><Label className="text-muted-foreground">Classes</Label>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {selectedTeacher.classes.length > 0 ? (
-                      selectedTeacher.classes.map(c => (
+                      selectedTeacher.classes.map(c =>
                         <Badge key={`${c.class_id}-${c.subject_id}`} variant={c.is_principal ? "default" : "outline"}>
                           {c.class_name} - {c.subject_name} {c.is_principal && "(PP)"}
                         </Badge>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-sm">Aucune classe</p>
-                    )}
+                      )
+                    ) : <p className="text-sm">Aucune</p>}
                   </div>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Statut</Label>
-                  <Badge variant={selectedTeacher.is_active ? "default" : "secondary"} className="mt-1">
-                    {selectedTeacher.is_active ? "Actif" : "Inactif"}
-                  </Badge>
                 </div>
               </div>
             )}
           </DialogContent>
         </Dialog>
 
-        {/* Edit Teacher Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Modifier l'enseignant</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Modifier</DialogTitle></DialogHeader>
             <div className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Prénom</Label>
-                  <Input 
-                    value={editFormData.firstName} 
-                    onChange={e => setEditFormData({...editFormData, firstName: e.target.value})} 
-                  />
+                <div><Label>Prénom</Label>
+                  <Input value={editFormData.firstName} onChange={e => setEditFormData({...editFormData, firstName: e.target.value})} />
                 </div>
-                <div>
-                  <Label>Nom</Label>
-                  <Input 
-                    value={editFormData.lastName} 
-                    onChange={e => setEditFormData({...editFormData, lastName: e.target.value})} 
-                  />
+                <div><Label>Nom</Label>
+                  <Input value={editFormData.lastName} onChange={e => setEditFormData({...editFormData, lastName: e.target.value})} />
                 </div>
               </div>
-              <div>
-                <Label>Téléphone</Label>
-                <Input 
-                  value={editFormData.phone} 
-                  onChange={e => setEditFormData({...editFormData, phone: e.target.value})} 
-                />
+              <div><Label>Téléphone</Label>
+                <Input value={editFormData.phone} onChange={e => setEditFormData({...editFormData, phone: e.target.value})} />
               </div>
-              <div>
-                <Label>Matricule employé</Label>
-                <Input 
-                  value={editFormData.employeeId} 
-                  onChange={e => setEditFormData({...editFormData, employeeId: e.target.value})} 
-                />
+              <div><Label>Matricule</Label>
+                <Input value={editFormData.employeeId} onChange={e => setEditFormData({...editFormData, employeeId: e.target.value})} />
               </div>
-              <div>
-                <Label>Spécialités (matières)</Label>
+              <div><Label>Spécialités</Label>
                 <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {subjects.map(subject => (
-                    <label key={subject.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <Checkbox
-                        checked={editSpecialties.includes(subject.id)}
+                  {subjects.map(sub => (
+                    <label key={sub.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox checked={editSpecialties.includes(sub.id)}
                         onCheckedChange={(checked) => {
-                          if (checked) {
-                            setEditSpecialties([...editSpecialties, subject.id]);
-                          } else {
-                            setEditSpecialties(editSpecialties.filter(id => id !== subject.id));
-                          }
+                          if (checked) setEditSpecialties([...editSpecialties, sub.id]);
+                          else setEditSpecialties(editSpecialties.filter(id => id !== sub.id));
                         }}
                       />
-                      {subject.name}
+                      {sub.name}
                     </label>
                   ))}
                 </div>

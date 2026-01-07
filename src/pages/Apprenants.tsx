@@ -331,13 +331,6 @@ const Apprenants = () => {
                   />
                   <p className="text-xs text-muted-foreground mt-1">Un mot de passe sera généré automatiquement</p>
                 </div>
-                  <Label>Mot de passe *</Label>
-                  <Input 
-                    type="password" 
-                    value={formData.password} 
-                    onChange={e => setFormData({...formData, password: e.target.value})} 
-                  />
-                </div>
                 <div>
                   <Label>Matricule *</Label>
                   <Input 
@@ -623,7 +616,7 @@ const Apprenants = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Prénom</Label>
-                  <Input 
+                  <Input
                     value={editFormData.firstName} 
                     onChange={e => setEditFormData({...editFormData, firstName: e.target.value})} 
                   />
@@ -653,7 +646,7 @@ const Apprenants = () => {
               <div>
                 <Label>Date de naissance</Label>
                 <Input 
-                  type="date" 
+                  type="date"
                   value={editFormData.birthday} 
                   onChange={e => setEditFormData({...editFormData, birthday: e.target.value})} 
                 />

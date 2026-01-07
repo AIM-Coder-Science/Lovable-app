@@ -131,12 +131,9 @@ const Enseignants = () => {
 
   const fetchSubjectsAndClasses = async () => {
     const [subjectsRes, classesRes] = await Promise.all([
-      supabase.from('subjects').select('id, name').order('name'),
+      supabase.from('subjects').select('id, name').eq('is_active', true).order('name'),
       supabase.from('classes').select('id, name, level').eq('is_active', true).order('name'),
     ]);
-
-    console.log('Fetched subjects:', subjectsRes.data);
-    console.log('Fetched classes:', classesRes.data);
 
     if (subjectsRes.data) setSubjects(subjectsRes.data);
     if (classesRes.data) setClasses(classesRes.data);

@@ -1,56 +1,39 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
-import { GraduationCap, Lock, Mail, Eye, EyeOff, User, UserPlus } from "lucide-react";
+import { GraduationCap, Lock, Mail, Eye, EyeOff, Home, KeyRound } from "lucide-react";
 import { z } from "zod";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 const loginSchema = z.object({
   email: z.string().email("Email invalide").max(255),
   password: z.string().min(6, "Mot de passe trop court").max(100),
 });
 
-const setupSchema = z.object({
-  email: z.string().email("Email invalide").max(255),
-  password: z.string().min(6, "Mot de passe minimum 6 caractères").max(100),
-  firstName: z.string().min(2, "Prénom requis").max(50),
-  lastName: z.string().min(2, "Nom requis").max(50),
-});
-
 const Auth = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSetupMode, setIsSetupMode] = useState(false);
-  const [checkingAdmin, setCheckingAdmin] = useState(true);
+  const [resetEmail, setResetEmail] = useState("");
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isResetLoading, setIsResetLoading] = useState(false);
 
   useEffect(() => {
-    checkExistingAdmin();
-  }, []);
-
-  const checkExistingAdmin = async () => {
-    try {
-      // Check if any admin exists by trying to count user_roles with admin
-      // Since RLS prevents unauthenticated access, we'll use a different approach
-      // We'll try to call the create-admin function with a check-only flag
-      setCheckingAdmin(true);
-      
-      // For now, we'll assume setup mode is needed if login fails
-      // The edge function will handle the actual check
-      setIsSetupMode(true);
-      setCheckingAdmin(false);
-    } catch (error) {
-      console.error('Error checking admin:', error);
-      setCheckingAdmin(false);
-    }
-  };
+    // Check if user is already logged in
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate("/dashboard");
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,99 +85,40 @@ const Auth = () => {
     }
   };
 
-  const handleSetupAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      const validation = setupSchema.safeParse({ 
-        email, 
-        password, 
-        firstName, 
-        lastName 
-      });
-      
-      if (!validation.success) {
-        toast({
-          title: "Erreur de validation",
-          description: validation.error.errors[0].message,
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('create-admin', {
-        body: { email, password, firstName, lastName },
-      });
-
-      if (error) {
-        toast({
-          title: "Erreur",
-          description: error.message || "Impossible de créer le compte admin",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (data?.error) {
-        // If admin already exists, switch to login mode
-        if (data.error.includes('existe déjà')) {
-          setIsSetupMode(false);
-          toast({
-            title: "Admin existant",
-            description: "Un compte admin existe déjà. Veuillez vous connecter.",
-          });
-          return;
-        }
-        
-        toast({
-          title: "Erreur",
-          description: data.error,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      toast({
-        title: "Compte admin créé",
-        description: "Vous pouvez maintenant vous connecter",
-      });
-
-      // Auto-login after creation
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (!loginError) {
-        navigate("/dashboard");
-      } else {
-        setIsSetupMode(false);
-      }
-
-    } catch (error) {
-      console.error('Setup error:', error);
+  const handlePasswordReset = async () => {
+    if (!resetEmail) {
       toast({
         title: "Erreur",
-        description: "Une erreur inattendue s'est produite",
+        description: "Veuillez entrer votre adresse email",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsResetLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/auth`,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Email envoyé",
+        description: "Si un compte existe avec cette adresse, vous recevrez un email de réinitialisation.",
+      });
+      setIsResetDialogOpen(false);
+      setResetEmail("");
+    } catch (error: any) {
+      toast({
+        title: "Erreur",
+        description: error.message,
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsResetLoading(false);
     }
   };
-
-  if (checkingAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-muted-foreground">Vérification...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex">
@@ -206,7 +130,7 @@ const Auth = () => {
             <div className="w-14 h-14 rounded-2xl bg-sidebar-primary/20 flex items-center justify-center">
               <GraduationCap className="w-8 h-8 text-sidebar-primary" />
             </div>
-            <span className="text-2xl font-bold">EduGest</span>
+            <span className="text-2xl font-bold">TinTin Kapi</span>
           </div>
           <h1 className="text-4xl font-bold mb-4 leading-tight">
             Plateforme de Gestion<br />Scolaire Moderne
@@ -221,64 +145,36 @@ const Auth = () => {
         </div>
       </div>
 
-      {/* Right Panel - Login/Setup Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background">
+      {/* Right Panel - Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background relative">
+        {/* Back to Home Link */}
+        <Link 
+          to="/" 
+          className="absolute top-6 left-6 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Home className="w-5 h-5" />
+          <span className="text-sm font-medium">Retour à l'accueil</span>
+        </Link>
+
         <div className="w-full max-w-md animate-fade-in">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
               <GraduationCap className="w-7 h-7 text-primary" />
             </div>
-            <span className="text-2xl font-bold text-foreground">EduGest</span>
+            <span className="text-2xl font-bold text-foreground">TinTin Kapi</span>
           </div>
 
           <div className="text-center mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-2">
-              {isSetupMode ? "Configuration Initiale" : "Connexion"}
+              Connexion
             </h2>
             <p className="text-muted-foreground">
-              {isSetupMode 
-                ? "Créez le premier compte administrateur" 
-                : "Entrez vos identifiants pour accéder à votre espace"}
+              Entrez vos identifiants pour accéder à votre espace
             </p>
           </div>
 
-          <form onSubmit={isSetupMode ? handleSetupAdmin : handleLogin} className="space-y-5">
-            {isSetupMode && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName" className="text-sm font-medium">
-                    Prénom
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                      id="firstName"
-                      type="text"
-                      placeholder="Jean"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      className="pl-11"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName" className="text-sm font-medium">
-                    Nom
-                  </Label>
-                  <Input
-                    id="lastName"
-                    type="text"
-                    placeholder="Dupont"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
+          <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">
                 Email
@@ -288,7 +184,7 @@ const Auth = () => {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@edugest.com"
+                  placeholder="votre@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-11"
@@ -332,43 +228,57 @@ const Auth = () => {
               {isLoading ? (
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  {isSetupMode ? "Création..." : "Connexion..."}
+                  Connexion...
                 </div>
               ) : (
-                <>
-                  {isSetupMode ? (
-                    <>
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Créer le compte admin
-                    </>
-                  ) : (
-                    "Se connecter"
-                  )}
-                </>
+                "Se connecter"
               )}
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => setIsSetupMode(!isSetupMode)}
-              className="text-sm text-primary hover:underline"
-            >
-              {isSetupMode 
-                ? "J'ai déjà un compte → Se connecter" 
-                : "Configuration initiale → Créer admin"}
-            </button>
-          </div>
+          <div className="mt-6 space-y-4">
+            <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+              <DialogTrigger asChild>
+                <button className="w-full text-center text-sm text-primary hover:underline flex items-center justify-center gap-2">
+                  <KeyRound className="w-4 h-4" />
+                  Mot de passe oublié ?
+                </button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Réinitialiser le mot de passe</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Entrez votre adresse email. Si un compte existe, vous recevrez un lien de réinitialisation.
+                  </p>
+                  <div>
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="votre@email.com"
+                    />
+                  </div>
+                  <Button 
+                    onClick={handlePasswordReset} 
+                    className="w-full"
+                    disabled={isResetLoading}
+                  >
+                    {isResetLoading ? "Envoi..." : "Envoyer le lien de réinitialisation"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
-          {!isSetupMode && (
-            <p className="mt-6 text-center text-sm text-muted-foreground">
+            <p className="text-center text-sm text-muted-foreground">
               Vous n'avez pas de compte ?{" "}
               <span className="text-primary font-medium">
                 Contactez votre administrateur
               </span>
             </p>
-          )}
+          </div>
         </div>
       </div>
     </div>

@@ -5,16 +5,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Settings, User, Lock, School, Sliders } from "lucide-react";
+import { Settings, User, Lock, School, Sliders, CreditCard } from "lucide-react";
+import { AvatarUpload } from "@/components/profile/AvatarUpload";
+import { ClassFeesSettings } from "@/components/settings/ClassFeesSettings";
+import { FeeArticlesSettings } from "@/components/settings/FeeArticlesSettings";
+import { TeacherRatesSettings } from "@/components/settings/TeacherRatesSettings";
+import { PaymentReminderSettings } from "@/components/settings/PaymentReminderSettings";
 
 const Parametres = () => {
   const { user, profileId, role, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [profileData, setProfileData] = useState({
     firstName: "",
     lastName: "",
@@ -28,10 +33,11 @@ const Parametres = () => {
   });
   const [schoolSettings, setSchoolSettings] = useState({
     id: "",
-    schoolName: "EduGest",
+    schoolName: "TinTin Kapi",
     academicYear: "2024-2025",
     periodSystem: "trimester",
     gradingSystem: "numeric_20",
+    paymentReminderFrequency: "monthly",
   });
 
   const fetchProfile = async () => {
@@ -39,7 +45,7 @@ const Parametres = () => {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('first_name, last_name, email, phone')
+      .select('first_name, last_name, email, phone, avatar_url')
       .eq('id', profileId)
       .single();
 
@@ -50,6 +56,7 @@ const Parametres = () => {
         email: data.email,
         phone: data.phone || "",
       });
+      setAvatarUrl(data.avatar_url);
     }
   };
 
@@ -58,7 +65,7 @@ const Parametres = () => {
       .from('school_settings')
       .select('*')
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (data) {
       setSchoolSettings({
@@ -67,6 +74,7 @@ const Parametres = () => {
         academicYear: data.academic_year,
         periodSystem: data.period_system,
         gradingSystem: data.grading_system,
+        paymentReminderFrequency: data.payment_reminder_frequency || 'monthly',
       });
     }
   };
@@ -146,6 +154,7 @@ const Parametres = () => {
           academic_year: schoolSettings.academicYear,
           period_system: schoolSettings.periodSystem,
           grading_system: schoolSettings.gradingSystem,
+          payment_reminder_frequency: schoolSettings.paymentReminderFrequency,
         })
         .eq('id', schoolSettings.id);
 
@@ -184,7 +193,7 @@ const Parametres = () => {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="profile" className="gap-2">
               <User className="w-4 h-4" />
               Profil
@@ -198,6 +207,10 @@ const Parametres = () => {
                 <TabsTrigger value="school" className="gap-2">
                   <School className="w-4 h-4" />
                   Établissement
+                </TabsTrigger>
+                <TabsTrigger value="fees" className="gap-2">
+                  <CreditCard className="w-4 h-4" />
+                  Facturation
                 </TabsTrigger>
                 <TabsTrigger value="system" className="gap-2">
                   <Sliders className="w-4 h-4" />
@@ -214,7 +227,22 @@ const Parametres = () => {
                 <CardTitle>Informations du profil</CardTitle>
                 <CardDescription>Mettez à jour vos informations personnelles</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
+                {/* Avatar Upload */}
+                {user && profileId && (
+                  <div className="flex justify-center pb-4 border-b">
+                    <AvatarUpload
+                      currentAvatarUrl={avatarUrl}
+                      userId={user.id}
+                      profileId={profileId}
+                      firstName={profileData.firstName}
+                      lastName={profileData.lastName}
+                      onUploadComplete={(url) => setAvatarUrl(url)}
+                      size="lg"
+                    />
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Prénom</Label>
@@ -246,7 +274,7 @@ const Parametres = () => {
                   <Input
                     value={profileData.phone}
                     onChange={e => setProfileData({ ...profileData, phone: e.target.value })}
-                    placeholder="+221 XX XXX XX XX"
+                    placeholder="+229 XX XX XX XX"
                   />
                 </div>
                 <Button onClick={handleUpdateProfile} disabled={loading}>
@@ -320,6 +348,26 @@ const Parametres = () => {
             </TabsContent>
           )}
 
+          {/* Fees Settings Tab */}
+          {isAdmin && (
+            <TabsContent value="fees">
+              <div className="space-y-6">
+                <ClassFeesSettings />
+                <FeeArticlesSettings />
+                <TeacherRatesSettings />
+                <PaymentReminderSettings
+                  value={schoolSettings.paymentReminderFrequency}
+                  onChange={(v) => {
+                    setSchoolSettings({ ...schoolSettings, paymentReminderFrequency: v });
+                  }}
+                />
+                <Button onClick={handleUpdateSchoolSettings} disabled={loading} className="w-full">
+                  {loading ? "Enregistrement..." : "Enregistrer les paramètres de facturation"}
+                </Button>
+              </div>
+            </TabsContent>
+          )}
+
           {/* System Settings Tab */}
           {isAdmin && (
             <TabsContent value="system">
@@ -383,13 +431,6 @@ const Parametres = () => {
                         <div className="flex-1">
                           <Label htmlFor="numeric_100" className="font-medium cursor-pointer">Sur 100</Label>
                           <p className="text-sm text-muted-foreground">Notes de 0 à 100 (pourcentage)</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer">
-                        <RadioGroupItem value="letters" id="letters" />
-                        <div className="flex-1">
-                          <Label htmlFor="letters" className="font-medium cursor-pointer">Lettres</Label>
-                          <p className="text-sm text-muted-foreground">A+, A, A-, B+, B, B-, C+, C, C-, D, F</p>
                         </div>
                       </div>
                     </RadioGroup>

@@ -56,10 +56,11 @@ const navItems: NavItem[] = [
   { icon: BookOpen, label: "Matières", href: "/matieres", roles: ["admin"] },
   { icon: ClipboardList, label: "Notes", href: "/notes", roles: ["teacher"] },
   { icon: Star, label: "Appréciations", href: "/appreciations", roles: ["teacher"], principalOnly: true },
-  { icon: FileText, label: "Bulletins", href: "/bulletins", roles: ["admin", "student"] },
-  { icon: Receipt, label: "Facturation", href: "/invoices", roles: ["admin"] },
+  { icon: FileText, label: "Bulletins", href: "/bulletins", roles: ["admin", "teacher", "student"], principalOnly: false },
+  { icon: Receipt, label: "Facturation", href: "/invoices", roles: ["admin", "teacher", "student"] },
+  { icon: Receipt, label: "Articles", href: "/articles", roles: ["student"] },
   { icon: FolderOpen, label: "Documents", href: "/documents", roles: ["admin", "teacher", "student"] },
-  { icon: Settings, label: "Paramètres", href: "/parametres", roles: ["admin"] },
+  { icon: Settings, label: "Paramètres", href: "/parametres", roles: ["admin", "teacher", "student"] },
 ];
 
 export const Sidebar = ({ userRole, userName = "Utilisateur", isPrincipal = false }: SidebarProps) => {
@@ -79,7 +80,10 @@ export const Sidebar = ({ userRole, userName = "Utilisateur", isPrincipal = fals
 
   const filteredItems = navItems.filter((item) => {
     if (!item.roles.includes(userRole)) return false;
-    if (item.principalOnly && !isPrincipal) return false;
+    // For bulletins, teachers need to be principal to see it
+    if (item.href === '/bulletins' && userRole === 'teacher' && !isPrincipal) return false;
+    // For appreciations, only principal teachers
+    if (item.principalOnly && !isPrincipal && userRole === 'teacher') return false;
     return true;
   });
 
@@ -92,7 +96,7 @@ export const Sidebar = ({ userRole, userName = "Utilisateur", isPrincipal = fals
             <GraduationCap className="w-6 h-6 text-sidebar-primary" />
           </div>
           {(mobile || !isCollapsed) && (
-            <span className="text-lg font-bold text-sidebar-foreground">EduGest</span>
+            <span className="text-lg font-bold text-sidebar-foreground">TinTin Kapi</span>
           )}
         </div>
         {!mobile && (

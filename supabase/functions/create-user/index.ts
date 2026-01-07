@@ -6,6 +6,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Generate a random password
+function generatePassword(length = 12): string {
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const special = '!@#$%&*';
+  const all = uppercase + lowercase + numbers + special;
+  
+  let password = '';
+  // Ensure at least one of each type
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += special[Math.floor(Math.random() * special.length)];
+  
+  // Fill the rest
+  for (let i = password.length; i < length; i++) {
+    password += all[Math.floor(Math.random() * all.length)];
+  }
+  
+  // Shuffle the password
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -58,7 +82,6 @@ serve(async (req) => {
     const body = await req.json();
     const { 
       email, 
-      password, 
       firstName, 
       lastName, 
       phone,
@@ -75,7 +98,7 @@ serve(async (req) => {
     } = body;
 
     // Validation
-    if (!email || !password || !firstName || !lastName || !userType) {
+    if (!email || !firstName || !lastName || !userType) {
       return new Response(JSON.stringify({ error: 'Champs obligatoires manquants' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -89,12 +112,15 @@ serve(async (req) => {
       });
     }
 
+    // Generate a random password
+    const generatedPassword = generatePassword(12);
+
     console.log(`Creating ${userType}: ${email}`);
 
     // Create auth user using admin API
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password,
+      password: generatedPassword,
       email_confirm: true,
       user_metadata: {
         first_name: firstName,
@@ -234,6 +260,7 @@ serve(async (req) => {
       success: true, 
       userId: newUser.id,
       entityId: entityId,
+      generatedPassword: generatedPassword,
       message: `${userType === 'teacher' ? 'Enseignant' : 'Apprenant'} créé avec succès`
     }), {
       status: 200,

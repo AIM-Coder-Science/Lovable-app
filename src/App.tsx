@@ -20,6 +20,7 @@ import Timetable from "./pages/Timetable";
 import Administration from "./pages/Administration";
 import Invoices from "./pages/Invoices";
 import Events from "./pages/Events";
+import Articles from "./pages/Articles";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/administration" element={<Administration />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/articles" element={<Articles />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

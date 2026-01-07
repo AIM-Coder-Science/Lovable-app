@@ -67,7 +67,6 @@ const Apprenants = () => {
     firstName: "",
     lastName: "",
     email: "",
-    password: "",
     matricule: "",
     birthday: "",
     parentName: "",
@@ -117,7 +116,7 @@ const Apprenants = () => {
   }, []);
 
   const handleCreateStudent = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password || !formData.matricule) {
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.matricule) {
       toast({ title: "Erreur", description: "Veuillez remplir tous les champs obligatoires", variant: "destructive" });
       return;
     }
@@ -132,7 +131,6 @@ const Apprenants = () => {
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
           email: formData.email,
-          password: formData.password,
           firstName: formData.firstName,
           lastName: formData.lastName,
           userType: 'student',
@@ -147,7 +145,10 @@ const Apprenants = () => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      toast({ title: "Succès", description: "Apprenant créé avec succès" });
+      toast({ 
+        title: "Apprenant créé", 
+        description: `Mot de passe généré: ${data.generatedPassword}. Notez-le car il ne sera plus affiché.`,
+      });
       setIsCreateDialogOpen(false);
       resetForm();
       fetchStudents();
@@ -268,7 +269,6 @@ const Apprenants = () => {
       firstName: "",
       lastName: "",
       email: "",
-      password: "",
       matricule: "",
       birthday: "",
       parentName: "",
@@ -329,8 +329,8 @@ const Apprenants = () => {
                     value={formData.email} 
                     onChange={e => setFormData({...formData, email: e.target.value})} 
                   />
+                  <p className="text-xs text-muted-foreground mt-1">Un mot de passe sera généré automatiquement</p>
                 </div>
-                <div>
                   <Label>Mot de passe *</Label>
                   <Input 
                     type="password" 

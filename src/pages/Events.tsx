@@ -34,6 +34,7 @@ const EVENT_TYPES = [
   { value: "sport", label: "Événement sportif", icon: Trophy },
   { value: "ceremony", label: "Cérémonie", icon: Award },
   { value: "meeting", label: "Réunion", icon: Users },
+  { value: "educational", label: "Éducatif", icon: CalendarDays },
 ];
 
 const Events = () => {
@@ -82,6 +83,12 @@ const Events = () => {
       return;
     }
 
+    // Validate end date is not before start date
+    if (formData.end_date && new Date(formData.end_date) < new Date(formData.start_date)) {
+      toast({ title: "Erreur", description: "La date de fin ne peut pas être antérieure à la date de début", variant: "destructive" });
+      return;
+    }
+
     try {
       const { error } = await supabase.from('events').insert({
         title: formData.title,
@@ -109,6 +116,12 @@ const Events = () => {
   const handleUpdate = async () => {
     if (!selectedEvent || !formData.title || !formData.start_date) {
       toast({ title: "Erreur", description: "Le titre et la date sont requis", variant: "destructive" });
+      return;
+    }
+
+    // Validate end date is not before start date
+    if (formData.end_date && new Date(formData.end_date) < new Date(formData.start_date)) {
+      toast({ title: "Erreur", description: "La date de fin ne peut pas être antérieure à la date de début", variant: "destructive" });
       return;
     }
 
@@ -192,6 +205,8 @@ const Events = () => {
         return "bg-warning/20 text-warning border-warning/30";
       case "meeting":
         return "bg-primary/20 text-primary border-primary/30";
+      case "educational":
+        return "bg-blue-500/20 text-blue-600 border-blue-500/30";
       default:
         return "bg-secondary text-secondary-foreground";
     }

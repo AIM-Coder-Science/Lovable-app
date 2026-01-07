@@ -54,7 +54,7 @@ const Index = () => {
               <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
                 <GraduationCap className="w-7 h-7 text-primary-foreground" />
               </div>
-              <span className="text-2xl font-bold text-primary-foreground">EduGest</span>
+              <span className="text-2xl font-bold text-primary-foreground">TinTin Kapi</span>
             </div>
             <Button
               onClick={() => navigate("/auth")}
@@ -127,7 +127,7 @@ const Index = () => {
       <footer className="border-t border-border py-8">
         <div className="container mx-auto px-4 text-center">
           <p className="text-muted-foreground text-sm">
-            © 2025 EduGest. Tous droits réservés.
+            © 2025 TinTin Kapi. Tous droits réservés.
           </p>
         </div>
       </footer>

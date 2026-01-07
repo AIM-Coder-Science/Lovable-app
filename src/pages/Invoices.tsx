@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Receipt, Plus, Search, Filter, CreditCard, AlertCircle, 
-  CheckCircle, Clock, DollarSign, Users, TrendingUp, FileText
+  CheckCircle, Clock, DollarSign, Users, TrendingUp, FileText,
+  Wallet, Building
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,6 +36,18 @@ interface Invoice {
   };
 }
 
+interface TeacherPayment {
+  id: string;
+  teacher_id: string;
+  amount: number;
+  amount_paid: number;
+  description: string;
+  due_date: string;
+  status: string;
+  payment_date: string | null;
+  notes: string | null;
+}
+
 interface Student {
   id: string;
   matricule: string;
@@ -42,8 +56,9 @@ interface Student {
 }
 
 const Invoices = () => {
-  const { role } = useAuth();
+  const { role, studentId, teacherId, loading: authLoading } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [teacherPayments, setTeacherPayments] = useState<TeacherPayment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -63,39 +78,55 @@ const Invoices = () => {
   const fetchData = async () => {
     setLoading(true);
     
-    const [invoicesRes, studentsRes] = await Promise.all([
-      supabase
-        .from('invoices')
-        .select(`
-          *,
-          student:students(
-            matricule,
-            profile:profiles(first_name, last_name),
-            class:classes(name)
-          )
-        `)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('students')
-        .select('id, matricule, profile:profiles(first_name, last_name), class:classes(name)')
-        .eq('is_active', true)
-    ]);
+    if (role === 'admin') {
+      const [invoicesRes, studentsRes] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select(`
+            *,
+            student:students(
+              matricule,
+              profile:profiles(first_name, last_name),
+              class:classes(name)
+            )
+          `)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('students')
+          .select('id, matricule, profile:profiles(first_name, last_name), class:classes(name)')
+          .eq('is_active', true)
+      ]);
 
-    if (invoicesRes.error) {
-      toast({ title: "Erreur", description: "Impossible de charger les factures", variant: "destructive" });
-    } else {
-      setInvoices(invoicesRes.data as any || []);
+      if (!invoicesRes.error) {
+        setInvoices(invoicesRes.data as any || []);
+      }
+      setStudents(studentsRes.data as any || []);
+    } else if (role === 'student' && studentId) {
+      const { data } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false });
+      
+      setInvoices(data as any || []);
+    } else if (role === 'teacher' && teacherId) {
+      const { data } = await supabase
+        .from('teacher_payments')
+        .select('*')
+        .eq('teacher_id', teacherId)
+        .order('created_at', { ascending: false });
+      
+      setTeacherPayments(data as any || []);
     }
     
-    setStudents(studentsRes.data as any || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    if (role === 'admin') {
+    if (!authLoading && role) {
       fetchData();
     }
-  }, [role]);
+  }, [role, authLoading, studentId, teacherId]);
 
   const generateInvoiceNumber = () => {
     const year = new Date().getFullYear();
@@ -183,9 +214,10 @@ const Invoices = () => {
   };
 
   const filteredInvoices = invoices.filter(inv => {
-    const studentName = `${inv.student?.profile?.first_name} ${inv.student?.profile?.last_name}`.toLowerCase();
+    const studentName = inv.student ? `${inv.student.profile?.first_name} ${inv.student.profile?.last_name}`.toLowerCase() : '';
     const matchesSearch = studentName.includes(searchQuery.toLowerCase()) || 
-                          inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase());
+                          inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          inv.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterStatus === "all" || inv.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -193,18 +225,211 @@ const Invoices = () => {
   // Stats
   const totalAmount = invoices.reduce((acc, inv) => acc + inv.amount, 0);
   const totalPaid = invoices.reduce((acc, inv) => acc + inv.amount_paid, 0);
+  const remainingAmount = totalAmount - totalPaid;
   const pendingCount = invoices.filter(inv => inv.status === 'pending' || inv.status === 'partial').length;
 
-  if (role !== 'admin') {
+  // Teacher stats
+  const teacherTotalAmount = teacherPayments.reduce((acc, p) => acc + p.amount, 0);
+  const teacherTotalPaid = teacherPayments.reduce((acc, p) => acc + p.amount_paid, 0);
+
+  if (authLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-muted-foreground">Accès non autorisé</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
       </DashboardLayout>
     );
   }
 
+  // Student view
+  if (role === 'student') {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6 animate-fade-in">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Mes Factures</h1>
+            <p className="text-muted-foreground mt-1">Suivi de vos paiements de scolarité</p>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
+                  <Receipt className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(totalAmount)}</p>
+                  <p className="text-sm text-muted-foreground">Total à payer</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-success/10 to-success/5 border-success/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-success" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(totalPaid)}</p>
+                  <p className="text-sm text-muted-foreground">Déjà payé</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                  <Wallet className="w-6 h-6 text-warning" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(remainingAmount)}</p>
+                  <p className="text-sm text-muted-foreground">Reste à payer</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Invoices List */}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : invoices.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">Aucune facture</h3>
+                <p className="text-muted-foreground text-center">Vous n'avez pas encore de factures.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {invoices.map(inv => (
+                <Card key={inv.id}>
+                  <CardContent className="p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-sm text-muted-foreground">{inv.invoice_number}</span>
+                          {getStatusBadge(inv.status)}
+                        </div>
+                        <p className="font-medium text-foreground">{inv.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Échéance: {new Date(inv.due_date).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-foreground">{formatCurrency(inv.amount)}</p>
+                        <p className="text-sm text-success">Payé: {formatCurrency(inv.amount_paid)}</p>
+                        <p className="text-sm text-warning">Reste: {formatCurrency(inv.amount - inv.amount_paid)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Teacher view
+  if (role === 'teacher') {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6 animate-fade-in">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Mes Paiements</h1>
+            <p className="text-muted-foreground mt-1">Suivi de vos paiements de salaire</p>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
+                  <Building className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(teacherTotalAmount)}</p>
+                  <p className="text-sm text-muted-foreground">Total dû</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-success/10 to-success/5 border-success/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-success" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(teacherTotalPaid)}</p>
+                  <p className="text-sm text-muted-foreground">Reçu</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+                  <Wallet className="w-6 h-6 text-warning" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(teacherTotalAmount - teacherTotalPaid)}</p>
+                  <p className="text-sm text-muted-foreground">En attente</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Payments List */}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : teacherPayments.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">Aucun paiement</h3>
+                <p className="text-muted-foreground text-center">Vous n'avez pas encore de paiements enregistrés.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {teacherPayments.map(payment => (
+                <Card key={payment.id}>
+                  <CardContent className="p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getStatusBadge(payment.status)}
+                        </div>
+                        <p className="font-medium text-foreground">{payment.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Échéance: {new Date(payment.due_date).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-foreground">{formatCurrency(payment.amount)}</p>
+                        <p className="text-sm text-success">Reçu: {formatCurrency(payment.amount_paid)}</p>
+                        <p className="text-sm text-warning">En attente: {formatCurrency(payment.amount - payment.amount_paid)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Admin view
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -380,6 +605,7 @@ const Invoices = () => {
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Montant</TableHead>
                     <TableHead className="text-right">Payé</TableHead>
+                    <TableHead className="text-right">Reste</TableHead>
                     <TableHead>Échéance</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -396,6 +622,7 @@ const Invoices = () => {
                       <TableCell className="max-w-[200px] truncate">{inv.description}</TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(inv.amount)}</TableCell>
                       <TableCell className="text-right text-success font-medium">{formatCurrency(inv.amount_paid)}</TableCell>
+                      <TableCell className="text-right text-warning font-medium">{formatCurrency(inv.amount - inv.amount_paid)}</TableCell>
                       <TableCell>{new Date(inv.due_date).toLocaleDateString('fr-FR')}</TableCell>
                       <TableCell>{getStatusBadge(inv.status)}</TableCell>
                       <TableCell className="text-right">

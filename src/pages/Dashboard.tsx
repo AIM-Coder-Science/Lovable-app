@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
-import { Users, BookOpen, School, Bell, TrendingUp, Award, FileText, Calendar, GraduationCap, ClipboardList } from "lucide-react";
+import { Users, BookOpen, School, Bell, TrendingUp, Award, FileText, Calendar, GraduationCap, ClipboardList, CreditCard, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 interface Activity {
   id: string;
@@ -31,7 +34,14 @@ interface StudentGrade {
   created_at: string;
 }
 
+interface PaymentInfo {
+  totalDue: number;
+  totalPaid: number;
+  remaining: number;
+}
+
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { role, studentId, teacherId, isPrincipal, loading: authLoading } = useAuth();
   const [stats, setStats] = useState({
     totalStudents: 0,
@@ -42,6 +52,7 @@ const Dashboard = () => {
   const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
   const [publications, setPublications] = useState<Publication[]>([]);
   const [studentGrades, setStudentGrades] = useState<StudentGrade[]>([]);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo>({ totalDue: 0, totalPaid: 0, remaining: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -227,6 +238,21 @@ const Dashboard = () => {
       averageGrade: Math.round(avg * 10) / 10,
     });
 
+    // Fetch student payment info
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('amount, amount_paid')
+      .eq('student_id', studentId);
+
+    const totalDue = invoices?.reduce((sum, inv) => sum + Number(inv.amount), 0) || 0;
+    const totalPaid = invoices?.reduce((sum, inv) => sum + Number(inv.amount_paid), 0) || 0;
+
+    setPaymentInfo({
+      totalDue,
+      totalPaid,
+      remaining: totalDue - totalPaid,
+    });
+
     // Fetch publications for students
     const { data: pubs } = await supabase
       .from('publications')
@@ -390,8 +416,12 @@ const Dashboard = () => {
     );
   }
 
-  // Student Dashboard
+  // Student Dashboard - Enhanced
   if (role === 'student') {
+    const paymentProgress = paymentInfo.totalDue > 0 
+      ? (paymentInfo.totalPaid / paymentInfo.totalDue) * 100 
+      : 0;
+
     return (
       <DashboardLayout>
         <div className="space-y-8 animate-fade-in">
@@ -400,10 +430,56 @@ const Dashboard = () => {
             <p className="text-muted-foreground mt-1">Bienvenue sur votre tableau de bord</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard title="Ma Moyenne" value={`${stats.averageGrade}/20`} icon={Award} variant="primary" />
             <StatCard title="Notes reçues" value={studentGrades.length} icon={FileText} variant="accent" />
+            <StatCard 
+              title="Total Payé" 
+              value={`${paymentInfo.totalPaid.toLocaleString()}`} 
+              icon={Wallet} 
+              variant="success" 
+              subtitle="FCFA"
+            />
+            <StatCard 
+              title="Reste à payer" 
+              value={`${paymentInfo.remaining.toLocaleString()}`} 
+              icon={CreditCard} 
+              variant={paymentInfo.remaining > 0 ? "warning" : "success"}
+              subtitle="FCFA"
+            />
           </div>
+
+          {/* Payment Progress Card */}
+          {paymentInfo.totalDue > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-primary" />
+                  Suivi des Paiements
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Progression</span>
+                  <span className="font-medium">{Math.round(paymentProgress)}%</span>
+                </div>
+                <Progress value={paymentProgress} className="h-3" />
+                <div className="flex justify-between text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Payé</p>
+                    <p className="font-semibold text-green-600">{paymentInfo.totalPaid.toLocaleString()} FCFA</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-muted-foreground">Reste</p>
+                    <p className="font-semibold text-orange-600">{paymentInfo.remaining.toLocaleString()} FCFA</p>
+                  </div>
+                </div>
+                <Button onClick={() => navigate('/invoices')} className="w-full" variant="outline">
+                  Voir mes factures et payer
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>

@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Search, UserCheck, Users, UserCog, Eye, Pencil, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useSchoolSettings } from "@/hooks/useSchoolSettings";
 
 interface ClassItem {
   id: string;
@@ -26,6 +27,7 @@ interface ClassItem {
 const LEVELS = ["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"];
 
 const Classes = () => {
+  const { settings } = useSchoolSettings();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,12 +41,10 @@ const Classes = () => {
   const [editFormData, setEditFormData] = useState({
     name: "",
     level: "",
-    academicYear: "",
   });
   const [formData, setFormData] = useState({
     name: "",
     level: "",
-    academicYear: "2024-2025",
   });
 
   const fetchClasses = async () => {
@@ -117,14 +117,14 @@ const Classes = () => {
         .insert({
           name: formData.name,
           level: formData.level,
-          academic_year: formData.academicYear,
+          academic_year: settings.academic_year,
         });
 
       if (error) throw error;
 
       toast({ title: "Succès", description: "Classe créée avec succès" });
       setIsCreateDialogOpen(false);
-      setFormData({ name: "", level: "", academicYear: "2024-2025" });
+      setFormData({ name: "", level: "" });
       fetchClasses();
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
@@ -211,7 +211,6 @@ const Classes = () => {
         .update({
           name: editFormData.name,
           level: editFormData.level,
-          academic_year: editFormData.academicYear,
         })
         .eq('id', selectedClass.id);
 
@@ -230,7 +229,6 @@ const Classes = () => {
     setEditFormData({
       name: cls.name,
       level: cls.level,
-      academicYear: cls.academic_year,
     });
     setIsEditDialogOpen(true);
   };
@@ -284,8 +282,9 @@ const Classes = () => {
                 <div>
                   <Label>Année scolaire</Label>
                   <Input 
-                    value={formData.academicYear} 
-                    onChange={e => setFormData({...formData, academicYear: e.target.value})}
+                    value={settings.academic_year} 
+                    disabled
+                    className="bg-muted"
                   />
                 </div>
                 <Button onClick={handleCreateClass} className="w-full">Créer</Button>
@@ -557,8 +556,9 @@ const Classes = () => {
               <div>
                 <Label>Année scolaire</Label>
                 <Input 
-                  value={editFormData.academicYear} 
-                  onChange={e => setEditFormData({...editFormData, academicYear: e.target.value})}
+                  value={selectedClass?.academic_year || settings.academic_year} 
+                  disabled
+                  className="bg-muted"
                 />
               </div>
               <Button onClick={handleEditClass} className="w-full">Enregistrer</Button>

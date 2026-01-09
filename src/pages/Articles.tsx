@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   ShoppingCart, Package, CreditCard, Wallet, Check, AlertCircle,
-  Loader2, CheckCircle
+  Loader2, CheckCircle, Smartphone, Banknote
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,6 +41,7 @@ const Articles = () => {
   const [loading, setLoading] = useState(true);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [selectedStudentArticle, setSelectedStudentArticle] = useState<StudentArticle | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -120,10 +121,10 @@ const Articles = () => {
     }
   };
 
-  const openPaymentDialog = (article: Article) => {
-    setSelectedArticle(article);
-    const studentArticle = studentArticles.find(sa => sa.article_id === article.id);
-    const remaining = studentArticle ? studentArticle.amount - studentArticle.amount_paid : article.price;
+  const openPaymentDialog = (studentArticle: StudentArticle) => {
+    setSelectedArticle(studentArticle.article);
+    setSelectedStudentArticle(studentArticle);
+    const remaining = studentArticle.amount - studentArticle.amount_paid;
     setPaymentAmount(remaining.toString());
     setPaymentMethod("");
     setIsPaymentDialogOpen(true);
@@ -144,58 +145,33 @@ const Articles = () => {
     setIsProcessing(true);
 
     try {
-      const studentArticle = studentArticles.find(sa => sa.article_id === selectedArticle.id);
-      
-      if (!studentArticle) {
-        // Create student article first
-        await supabase.from('student_articles').insert({
-          student_id: studentId,
-          article_id: selectedArticle.id,
-          amount: selectedArticle.price,
-          amount_paid: 0,
-          status: 'pending',
-        });
-      }
-
-      // For FedaPay integration - we would redirect to FedaPay payment page
-      if (paymentMethod === 'fedapay' || paymentMethod === 'card') {
-        // Simulate payment processing - in production, this would redirect to FedaPay
-        toast({ 
-          title: "Paiement FedaPay", 
-          description: "Redirection vers FedaPay pour le paiement..." 
-        });
-        
-        // Simulate successful payment after delay
-        setTimeout(async () => {
-          const newAmountPaid = (studentArticle?.amount_paid || 0) + amount;
-          const totalAmount = studentArticle?.amount || selectedArticle.price;
-          const newStatus = newAmountPaid >= totalAmount ? 'paid' : 'partial';
-
-          await supabase
-            .from('student_articles')
-            .update({
-              amount_paid: newAmountPaid,
-              status: newStatus,
-              payment_date: newStatus === 'paid' ? new Date().toISOString() : null,
-            })
-            .eq('student_id', studentId)
-            .eq('article_id', selectedArticle.id);
-
-          // Record transaction
-          await supabase.from('payment_transactions').insert({
-            student_id: studentId,
-            article_id: selectedArticle.id,
+      // For online payments (FedaPay: card, mobile money)
+      if (['fedapay', 'card', 'momo', 'flooz'].includes(paymentMethod)) {
+        const { data, error } = await supabase.functions.invoke('initiate-payment', {
+          body: {
             amount: amount,
-            payment_method: paymentMethod,
-            status: 'completed',
-            transaction_ref: `TX-${Date.now()}`,
-          });
+            studentId: studentId,
+            articleId: selectedArticle.id,
+            paymentMethod: paymentMethod,
+            description: `Paiement ${selectedArticle.name}`,
+            callbackUrl: `${window.location.origin}/articles`,
+          },
+        });
 
-          toast({ title: "Succès", description: "Paiement effectué avec succès" });
-          setIsPaymentDialogOpen(false);
-          setIsProcessing(false);
-          fetchArticles();
-        }, 2000);
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+
+        if (data.paymentUrl) {
+          toast({ 
+            title: "Redirection", 
+            description: "Vous allez être redirigé vers la page de paiement..." 
+          });
+          // Open payment URL in new window
+          window.open(data.paymentUrl, '_blank');
+        }
+
+        setIsPaymentDialogOpen(false);
+        setIsProcessing(false);
         return;
       }
 
@@ -295,7 +271,7 @@ const Articles = () => {
                           <Button 
                             className="w-full gap-2" 
                             size="sm"
-                            onClick={() => openPaymentDialog(sa.article)}
+                            onClick={() => openPaymentDialog(sa)}
                           >
                             <CreditCard className="w-4 h-4" />
                             Payer maintenant
@@ -407,18 +383,30 @@ const Articles = () => {
                     <SelectItem value="card">
                       <div className="flex items-center gap-2">
                         <CreditCard className="w-4 h-4" />
-                        Carte bancaire
+                        Carte bancaire / Prépayée
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="momo">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4" />
+                        MTN Mobile Money
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="flooz">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4" />
+                        Moov Flooz
                       </div>
                     </SelectItem>
                     <SelectItem value="fedapay">
                       <div className="flex items-center gap-2">
                         <Wallet className="w-4 h-4" />
-                        FedaPay (Mobile Money)
+                        Autres (FedaPay)
                       </div>
                     </SelectItem>
                     <SelectItem value="cash">
                       <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4" />
+                        <Banknote className="w-4 h-4" />
                         Espèces (à la caisse)
                       </div>
                     </SelectItem>
@@ -432,6 +420,15 @@ const Articles = () => {
                   <p className="text-sm text-muted-foreground">
                     Le paiement en espèces doit être effectué à la caisse de l'établissement. 
                     Votre demande sera enregistrée et validée par l'administration.
+                  </p>
+                </div>
+              )}
+
+              {['card', 'momo', 'flooz', 'fedapay'].includes(paymentMethod) && (
+                <div className="flex items-start gap-2 p-3 bg-primary/10 rounded-lg border border-primary/20">
+                  <CreditCard className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                  <p className="text-sm text-muted-foreground">
+                    Vous serez redirigé vers une page de paiement sécurisée pour finaliser votre transaction.
                   </p>
                 </div>
               )}

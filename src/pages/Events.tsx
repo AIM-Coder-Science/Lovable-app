@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 interface Event {
   id: string;
@@ -436,7 +437,7 @@ const Events = () => {
                         </CardHeader>
                         <CardContent className="space-y-3">
                           {event.description && (
-                            <p className="text-sm text-muted-foreground line-clamp-2">{event.description}</p>
+                            <ExpandableText text={event.description} maxLength={100} className="text-sm text-muted-foreground" />
                           )}
                           <div className="space-y-2 text-sm">
                             <div className="flex items-center gap-2 text-foreground">

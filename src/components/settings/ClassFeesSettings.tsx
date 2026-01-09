@@ -26,11 +26,11 @@ export const ClassFeesSettings = () => {
 
   const fetchClassFees = async () => {
     setLoading(true);
+    // Fetch all active classes regardless of academic year
     const { data: classes } = await supabase
       .from('classes')
       .select('id, name, level')
       .eq('is_active', true)
-      .eq('academic_year', settings.academic_year)
       .order('level', { ascending: true });
 
     if (classes) {

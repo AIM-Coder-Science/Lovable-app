@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Search, Pencil, UserCheck, Settings, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Settings, Trash2 } from "lucide-react";
+import { StatusToggle } from "@/components/ui/status-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface Subject {
@@ -324,9 +325,10 @@ const Matieres = () => {
                         </p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={subject.is_active ? "default" : "secondary"}>
-                          {subject.is_active ? "Active" : "Inactive"}
-                        </Badge>
+                        <StatusToggle
+                          isActive={subject.is_active}
+                          onToggle={() => handleToggleActive(subject)}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -349,14 +351,6 @@ const Matieres = () => {
                             title="Modifier"
                           >
                             <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleToggleActive(subject)}
-                            title={subject.is_active ? "Désactiver" : "Activer"}
-                          >
-                            <UserCheck className="w-4 h-4" />
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

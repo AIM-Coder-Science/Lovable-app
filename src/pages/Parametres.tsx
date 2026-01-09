@@ -15,6 +15,7 @@ import { ClassFeesSettings } from "@/components/settings/ClassFeesSettings";
 import { FeeArticlesSettings } from "@/components/settings/FeeArticlesSettings";
 import { TeacherRatesSettings } from "@/components/settings/TeacherRatesSettings";
 import { PaymentReminderSettings } from "@/components/settings/PaymentReminderSettings";
+import { ProfileEditSettings } from "@/components/settings/ProfileEditSettings";
 
 const Parametres = () => {
   const { user, profileId, role, loading: authLoading } = useAuth();
@@ -284,34 +285,48 @@ const Parametres = () => {
             </Card>
           </TabsContent>
 
-          {/* Security Tab */}
           <TabsContent value="security">
             <Card>
               <CardHeader>
-                <CardTitle>Changer le mot de passe</CardTitle>
-                <CardDescription>Assurez-vous d'utiliser un mot de passe sécurisé</CardDescription>
+                <CardTitle>Sécurité du compte</CardTitle>
+                <CardDescription>
+                  {isAdmin 
+                    ? "Modifiez votre mot de passe" 
+                    : "Les modifications de mot de passe doivent être demandées à l'administration"}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label>Nouveau mot de passe</Label>
-                  <Input
-                    type="password"
-                    value={passwordData.newPassword}
-                    onChange={e => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                    placeholder="Minimum 6 caractères"
-                  />
-                </div>
-                <div>
-                  <Label>Confirmer le nouveau mot de passe</Label>
-                  <Input
-                    type="password"
-                    value={passwordData.confirmPassword}
-                    onChange={e => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                  />
-                </div>
-                <Button onClick={handleUpdatePassword} disabled={loading}>
-                  {loading ? "Mise à jour..." : "Mettre à jour le mot de passe"}
-                </Button>
+                {isAdmin ? (
+                  <>
+                    <div>
+                      <Label>Nouveau mot de passe</Label>
+                      <Input
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={e => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                        placeholder="Minimum 6 caractères"
+                      />
+                    </div>
+                    <div>
+                      <Label>Confirmer le nouveau mot de passe</Label>
+                      <Input
+                        type="password"
+                        value={passwordData.confirmPassword}
+                        onChange={e => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                      />
+                    </div>
+                    <Button onClick={handleUpdatePassword} disabled={loading}>
+                      {loading ? "Mise à jour..." : "Mettre à jour le mot de passe"}
+                    </Button>
+                  </>
+                ) : (
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-muted-foreground">
+                      Pour des raisons de sécurité, les enseignants et apprenants ne peuvent pas modifier directement leur mot de passe.
+                      Veuillez contacter l'administration pour toute demande de réinitialisation.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -436,6 +451,8 @@ const Parametres = () => {
                     </RadioGroup>
                   </CardContent>
                 </Card>
+
+                <ProfileEditSettings />
 
                 <Button onClick={handleUpdateSchoolSettings} disabled={loading} className="w-full">
                   {loading ? "Enregistrement..." : "Enregistrer les paramètres système"}

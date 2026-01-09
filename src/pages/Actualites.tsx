@@ -12,6 +12,7 @@ import { Bell, Calendar, Plus, Pencil, Trash2, Megaphone, Users, GraduationCap, 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 interface Publication {
   id: string;
@@ -394,7 +395,7 @@ const Actualites = () => {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <p className="text-foreground/80 leading-relaxed whitespace-pre-wrap line-clamp-4">{pub.content}</p>
+                  <ExpandableText text={pub.content} maxLength={200} className="text-foreground/80 leading-relaxed" />
                 </CardContent>
               </Card>
             ))}

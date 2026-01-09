@@ -477,6 +477,30 @@ export type Database = {
           },
         ]
       }
+      matricule_counters: {
+        Row: {
+          created_at: string
+          id: string
+          last_number: number
+          prefix: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_number?: number
+          prefix: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_number?: number
+          prefix?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string
@@ -667,6 +691,7 @@ export type Database = {
           id: string
           payment_reminder_frequency: string | null
           period_system: string
+          profile_edit_settings: Json | null
           school_name: string
           updated_at: string
         }
@@ -677,6 +702,7 @@ export type Database = {
           id?: string
           payment_reminder_frequency?: string | null
           period_system?: string
+          profile_edit_settings?: Json | null
           school_name?: string
           updated_at?: string
         }
@@ -687,6 +713,7 @@ export type Database = {
           id?: string
           payment_reminder_frequency?: string | null
           period_system?: string
+          profile_edit_settings?: Json | null
           school_name?: string
           updated_at?: string
         }
@@ -1152,6 +1179,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_matricule: { Args: { p_prefix: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

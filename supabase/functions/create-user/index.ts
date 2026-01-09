@@ -90,11 +90,12 @@ serve(async (req) => {
       employeeId,
       specialties, // array of subject_ids
       // Student specific
-      matricule,
       classId,
       birthday,
       parentName,
       parentPhone,
+      // Optional - if not provided, will be auto-generated
+      matricule,
     } = body;
 
     // Validation
@@ -105,17 +106,27 @@ serve(async (req) => {
       });
     }
 
-    if (userType === 'student' && !matricule) {
-      return new Response(JSON.stringify({ error: 'Matricule requis pour un étudiant' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+    // Auto-generate matricule if not provided
+    let finalMatricule = matricule;
+    if (!finalMatricule) {
+      const prefix = userType === 'teacher' ? 'EN' : 'AP';
+      const { data: matriculeData, error: matriculeError } = await supabaseAdmin
+        .rpc('generate_matricule', { p_prefix: prefix });
+      
+      if (matriculeError) {
+        console.error('Matricule generation error:', matriculeError);
+        return new Response(JSON.stringify({ error: 'Erreur lors de la génération du matricule' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      finalMatricule = matriculeData;
     }
 
     // Generate a random password
     const generatedPassword = generatePassword(12);
 
-    console.log(`Creating ${userType}: ${email}`);
+    console.log(`Creating ${userType}: ${email} with matricule ${finalMatricule}`);
 
     // Create auth user using admin API
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -193,7 +204,7 @@ serve(async (req) => {
         .insert({
           user_id: newUser.id,
           profile_id: profileData.id,
-          employee_id: employeeId || null,
+          employee_id: finalMatricule,
         })
         .select()
         .single();
@@ -234,7 +245,7 @@ serve(async (req) => {
         .insert({
           user_id: newUser.id,
           profile_id: profileData.id,
-          matricule: matricule,
+          matricule: finalMatricule,
           class_id: classId || null,
           birthday: birthday || null,
           parent_name: parentName || null,
@@ -260,6 +271,7 @@ serve(async (req) => {
       success: true, 
       userId: newUser.id,
       entityId: entityId,
+      matricule: finalMatricule,
       generatedPassword: generatedPassword,
       message: `${userType === 'teacher' ? 'Enseignant' : 'Apprenant'} créé avec succès`
     }), {

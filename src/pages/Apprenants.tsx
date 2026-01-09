@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Search, UserCheck, School, Eye, Pencil, Trash2 } from "lucide-react";
+import { StatusToggle } from "@/components/ui/status-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface Student {
@@ -460,9 +461,10 @@ const Apprenants = () => {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={student.is_active ? "default" : "secondary"}>
-                          {student.is_active ? "Actif" : "Inactif"}
-                        </Badge>
+                        <StatusToggle
+                          isActive={student.is_active}
+                          onToggle={() => handleToggleActive(student)}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -616,7 +618,7 @@ const Apprenants = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Prénom</Label>
-                  <Input
+                  <Input 
                     value={editFormData.firstName} 
                     onChange={e => setEditFormData({...editFormData, firstName: e.target.value})} 
                   />
@@ -646,7 +648,7 @@ const Apprenants = () => {
               <div>
                 <Label>Date de naissance</Label>
                 <Input 
-                  type="date"
+                  type="date" 
                   value={editFormData.birthday} 
                   onChange={e => setEditFormData({...editFormData, birthday: e.target.value})} 
                 />

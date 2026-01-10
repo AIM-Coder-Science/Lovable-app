@@ -101,6 +101,42 @@ serve(async (req) => {
       });
     }
 
+    // For cash payments - create notification for admin
+    if (paymentMethod === 'cash') {
+      // Create notification for admin
+      const { data: admins } = await supabaseAdmin
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'admin');
+
+      if (admins && admins.length > 0) {
+        const notifications = admins.map(admin => ({
+          user_id: admin.user_id,
+          title: 'Demande de paiement en espèces',
+          message: `${profile.first_name} ${profile.last_name} a demandé un paiement en espèces de ${amount} FCFA.`,
+          type: 'payment_request',
+          metadata: {
+            transaction_id: transactionData.id,
+            student_id: studentId,
+            article_id: articleId,
+            amount: amount,
+          }
+        }));
+
+        await supabaseAdmin.from('notifications').insert(notifications);
+      }
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        transactionId: transactionData.id,
+        transactionRef: transactionRef,
+        message: 'Demande de paiement en espèces envoyée à l\'administration. Veuillez vous rendre à la caisse.',
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // For FedaPay payments (card, mobile money)
     if (['fedapay', 'card', 'momo', 'flooz'].includes(paymentMethod)) {
       if (!fedapaySecretKey) {
@@ -109,6 +145,8 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+
+      console.log('Creating FedaPay transaction for amount:', amount);
 
       // Create FedaPay transaction
       const fedapayResponse = await fetch('https://sandbox-api.fedapay.com/v1/transactions', {
@@ -137,27 +175,46 @@ serve(async (req) => {
         }),
       });
 
+      const fedapayData = await fedapayResponse.json();
+      console.log('FedaPay response:', JSON.stringify(fedapayData));
+
       if (!fedapayResponse.ok) {
-        const errorData = await fedapayResponse.json();
-        console.error('FedaPay error:', errorData);
+        console.error('FedaPay error:', fedapayData);
         
         // Update transaction as failed
         await supabaseAdmin
           .from('payment_transactions')
-          .update({ status: 'failed', notes: JSON.stringify(errorData) })
+          .update({ status: 'failed', notes: JSON.stringify(fedapayData) })
           .eq('id', transactionData.id);
 
-        return new Response(JSON.stringify({ error: 'Erreur FedaPay: ' + (errorData.message || 'Échec de la transaction') }), {
+        return new Response(JSON.stringify({ error: 'Erreur FedaPay: ' + (fedapayData.message || 'Échec de la transaction') }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      const fedapayData = await fedapayResponse.json();
-      console.log('FedaPay transaction created:', fedapayData);
+      // Extract transaction ID from response - handle different response formats
+      let fedapayTransactionId = null;
+      if (fedapayData.v1?.transaction?.id) {
+        fedapayTransactionId = fedapayData.v1.transaction.id;
+      } else if (fedapayData.transaction?.id) {
+        fedapayTransactionId = fedapayData.transaction.id;
+      } else if (fedapayData.id) {
+        fedapayTransactionId = fedapayData.id;
+      }
+
+      if (!fedapayTransactionId) {
+        console.error('Could not extract transaction ID from FedaPay response:', fedapayData);
+        return new Response(JSON.stringify({ error: 'Format de réponse FedaPay inattendu' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('FedaPay transaction ID:', fedapayTransactionId);
 
       // Generate payment token/link
-      const tokenResponse = await fetch(`https://sandbox-api.fedapay.com/v1/transactions/${fedapayData.v1.transaction.id}/token`, {
+      const tokenResponse = await fetch(`https://sandbox-api.fedapay.com/v1/transactions/${fedapayTransactionId}/token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${fedapaySecretKey}`,
@@ -165,43 +222,49 @@ serve(async (req) => {
         },
       });
 
+      const tokenData = await tokenResponse.json();
+      console.log('Token response:', JSON.stringify(tokenData));
+
       if (!tokenResponse.ok) {
-        const tokenError = await tokenResponse.json();
-        console.error('FedaPay token error:', tokenError);
+        console.error('FedaPay token error:', tokenData);
         return new Response(JSON.stringify({ error: 'Erreur lors de la génération du lien de paiement' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      const tokenData = await tokenResponse.json();
-      
+      // Extract payment URL
+      let paymentUrl = tokenData.url || tokenData.token;
+      if (!paymentUrl && tokenData.v1?.token) {
+        paymentUrl = `https://checkout.fedapay.com/${tokenData.v1.token}`;
+      }
+
       // Update transaction with FedaPay reference
       await supabaseAdmin
         .from('payment_transactions')
         .update({ 
-          transaction_ref: fedapayData.v1.transaction.id.toString(),
-          notes: `FedaPay Transaction ID: ${fedapayData.v1.transaction.id}` 
+          transaction_ref: fedapayTransactionId.toString(),
+          notes: `FedaPay Transaction ID: ${fedapayTransactionId}` 
         })
         .eq('id', transactionData.id);
 
       return new Response(JSON.stringify({ 
         success: true,
-        paymentUrl: tokenData.url,
+        paymentUrl: paymentUrl,
         transactionId: transactionData.id,
-        fedapayTransactionId: fedapayData.v1.transaction.id,
+        fedapayTransactionId: fedapayTransactionId,
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // For cash payments - just return the transaction reference
+    // Fallback for unknown payment methods
     return new Response(JSON.stringify({ 
       success: true,
       transactionId: transactionData.id,
       transactionRef: transactionRef,
-      message: 'Demande de paiement en espèces enregistrée. Veuillez vous rendre à la caisse.',
+      message: 'Transaction enregistrée.',
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

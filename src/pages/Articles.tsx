@@ -218,78 +218,107 @@ const Articles = () => {
     );
   }
 
+  const [showOrders, setShowOrders] = useState(false);
+
+  // Calculate totals for orders
+  const totalOrdered = studentArticles.reduce((acc, sa) => acc + sa.amount, 0);
+  const totalPaidArticles = studentArticles.reduce((acc, sa) => acc + sa.amount_paid, 0);
+  const remainingArticles = totalOrdered - totalPaidArticles;
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Articles & Paiements</h1>
-          <p className="text-muted-foreground mt-1">
-            Commandez et payez vos articles scolaires
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Articles & Paiements</h1>
+            <p className="text-muted-foreground mt-1">
+              Commandez et payez vos articles scolaires
+            </p>
+          </div>
+          
+          {studentArticles.length > 0 && (
+            <Button 
+              variant={showOrders ? "default" : "outline"}
+              className="gap-2"
+              onClick={() => setShowOrders(!showOrders)}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              Mes commandes ({studentArticles.length})
+              {remainingArticles > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {remainingArticles.toLocaleString()} FCFA dû
+                </Badge>
+              )}
+            </Button>
+          )}
         </div>
 
-        {/* My Orders Section */}
-        {studentArticles.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5 text-primary" />
-              Mes commandes
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {studentArticles.map((sa) => {
-                const remaining = sa.amount - sa.amount_paid;
-                const progress = (sa.amount_paid / sa.amount) * 100;
-                
-                return (
-                  <Card key={sa.id} className="relative overflow-hidden">
-                    <div 
-                      className="absolute bottom-0 left-0 h-1 bg-primary transition-all"
-                      style={{ width: `${progress}%` }}
-                    />
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-base">{sa.article.name}</CardTitle>
-                        {getStatusBadge(sa.status)}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Total:</span>
-                        <span className="font-medium">{sa.amount.toLocaleString()} FCFA</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Payé:</span>
-                        <span className="font-medium text-success">{sa.amount_paid.toLocaleString()} FCFA</span>
-                      </div>
-                      {remaining > 0 && (
-                        <>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Restant:</span>
-                            <span className="font-medium text-destructive">{remaining.toLocaleString()} FCFA</span>
-                          </div>
-                          <Button 
-                            className="w-full gap-2" 
-                            size="sm"
-                            onClick={() => openPaymentDialog(sa)}
-                          >
-                            <CreditCard className="w-4 h-4" />
-                            Payer maintenant
-                          </Button>
-                        </>
-                      )}
-                      {sa.status === 'paid' && (
-                        <div className="flex items-center justify-center gap-2 text-success py-2">
-                          <CheckCircle className="w-5 h-5" />
-                          <span className="font-medium">Entièrement payé</span>
+        {/* My Orders Section - Collapsible */}
+        {showOrders && studentArticles.length > 0 && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-primary" />
+                Mes commandes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {studentArticles.map((sa) => {
+                  const remaining = sa.amount - sa.amount_paid;
+                  const progress = (sa.amount_paid / sa.amount) * 100;
+                  
+                  return (
+                    <Card key={sa.id} className="relative overflow-hidden bg-background">
+                      <div 
+                        className="absolute bottom-0 left-0 h-1 bg-primary transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-base">{sa.article.name}</CardTitle>
+                          {getStatusBadge(sa.status)}
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Total:</span>
+                          <span className="font-medium">{sa.amount.toLocaleString()} FCFA</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Payé:</span>
+                          <span className="font-medium text-success">{sa.amount_paid.toLocaleString()} FCFA</span>
+                        </div>
+                        {remaining > 0 && (
+                          <>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Restant:</span>
+                              <span className="font-medium text-destructive">{remaining.toLocaleString()} FCFA</span>
+                            </div>
+                            <Button 
+                              className="w-full gap-2" 
+                              size="sm"
+                              onClick={() => openPaymentDialog(sa)}
+                            >
+                              <CreditCard className="w-4 h-4" />
+                              Payer maintenant
+                            </Button>
+                          </>
+                        )}
+                        {sa.status === 'paid' && (
+                          <div className="flex items-center justify-center gap-2 text-success py-2">
+                            <CheckCircle className="w-5 h-5" />
+                            <span className="font-medium">Entièrement payé</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Available Articles Section */}

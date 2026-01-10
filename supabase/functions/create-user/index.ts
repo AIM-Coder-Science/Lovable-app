@@ -81,7 +81,6 @@ serve(async (req) => {
 
     const body = await req.json();
     const { 
-      email, 
       firstName, 
       lastName, 
       phone,
@@ -99,7 +98,7 @@ serve(async (req) => {
     } = body;
 
     // Validation
-    if (!email || !firstName || !lastName || !userType) {
+    if (!firstName || !lastName || !userType) {
       return new Response(JSON.stringify({ error: 'Champs obligatoires manquants' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -123,14 +122,18 @@ serve(async (req) => {
       finalMatricule = matriculeData;
     }
 
+    // Auto-generate email: first letter of lastName + first letter of firstName + numbers from matricule + @tintin.edugest
+    const matriculeNumbers = finalMatricule.replace(/\D/g, '');
+    const generatedEmail = `${lastName.charAt(0).toLowerCase()}${firstName.charAt(0).toLowerCase()}${matriculeNumbers}@tintin.edugest`;
+    
     // Generate a random password
     const generatedPassword = generatePassword(12);
 
-    console.log(`Creating ${userType}: ${email} with matricule ${finalMatricule}`);
+    console.log(`Creating ${userType}: ${generatedEmail} with matricule ${finalMatricule}`);
 
     // Create auth user using admin API
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: generatedEmail,
       password: generatedPassword,
       email_confirm: true,
       user_metadata: {
@@ -157,7 +160,7 @@ serve(async (req) => {
         user_id: newUser.id,
         first_name: firstName,
         last_name: lastName,
-        email: email,
+        email: generatedEmail,
         phone: phone || null,
       })
       .select()
@@ -272,6 +275,7 @@ serve(async (req) => {
       userId: newUser.id,
       entityId: entityId,
       matricule: finalMatricule,
+      email: generatedEmail,
       generatedPassword: generatedPassword,
       message: `${userType === 'teacher' ? 'Enseignant' : 'Apprenant'} créé avec succès`
     }), {

@@ -29,6 +29,9 @@ interface Invoice {
   payment_date: string | null;
   notes: string | null;
   student_id: string;
+  academic_year?: string;
+  created_at?: string;
+  updated_at?: string;
   student?: {
     matricule: string;
     profile: { first_name: string; last_name: string };
@@ -102,13 +105,59 @@ const Invoices = () => {
       }
       setStudents(studentsRes.data as any || []);
     } else if (role === 'student' && studentId) {
-      const { data } = await supabase
+      // Fetch student's class and class fee
+      const { data: studentData } = await supabase
+        .from('students')
+        .select('class_id')
+        .eq('id', studentId)
+        .single();
+      
+      // Fetch existing invoices
+      const { data: invoicesData } = await supabase
         .from('invoices')
         .select('*')
         .eq('student_id', studentId)
         .order('created_at', { ascending: false });
       
-      setInvoices(data as any || []);
+      let allInvoices = invoicesData || [];
+      
+      // If student has a class, check if tuition fee invoice exists
+      if (studentData?.class_id) {
+        const { data: classFee } = await supabase
+          .from('class_fees')
+          .select('*, class:classes(name)')
+          .eq('class_id', studentData.class_id)
+          .maybeSingle();
+        
+        // Check if tuition invoice already exists
+        const hasTuitionInvoice = allInvoices.some(inv => 
+          inv.description.toLowerCase().includes('frais de scolarité') || 
+          inv.description.toLowerCase().includes('scolarité')
+        );
+        
+        // If class has fees and no tuition invoice exists, show it as a virtual invoice
+        if (classFee && classFee.amount > 0 && !hasTuitionInvoice) {
+          const now = new Date().toISOString();
+          const tuitionInvoice = {
+            id: `tuition-${studentData.class_id}`,
+            invoice_number: 'AUTO-SCOL',
+            description: `Frais de scolarité - ${classFee.class?.name || 'Classe'}`,
+            amount: classFee.amount,
+            amount_paid: 0,
+            due_date: new Date(new Date().getFullYear(), 11, 31).toISOString(),
+            status: 'pending',
+            payment_date: null,
+            notes: 'Frais de scolarité automatiquement générés',
+            student_id: studentId,
+            academic_year: classFee.academic_year || new Date().getFullYear().toString(),
+            created_at: now,
+            updated_at: now,
+          };
+          allInvoices = [tuitionInvoice as any, ...allInvoices];
+        }
+      }
+      
+      setInvoices(allInvoices as any);
     } else if (role === 'teacher' && teacherId) {
       const { data } = await supabase
         .from('teacher_payments')

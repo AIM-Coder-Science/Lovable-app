@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Clock, Plus, Trash2, Calendar, MapPin, GripVertical, User, BookOpen } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertCircle, Clock, Plus, Trash2, Calendar, MapPin, User, BookOpen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -49,19 +49,19 @@ interface ConflictInfo {
 }
 
 const DAYS = [
-  { value: 1, label: "Lundi" },
-  { value: 2, label: "Mardi" },
-  { value: 3, label: "Mercredi" },
-  { value: 4, label: "Jeudi" },
-  { value: 5, label: "Vendredi" },
-  { value: 6, label: "Samedi" },
+  { value: 1, label: "Lundi", short: "Lun" },
+  { value: 2, label: "Mardi", short: "Mar" },
+  { value: 3, label: "Mercredi", short: "Mer" },
+  { value: 4, label: "Jeudi", short: "Jeu" },
+  { value: 5, label: "Vendredi", short: "Ven" },
+  { value: 6, label: "Samedi", short: "Sam" },
 ];
 
 const TIME_SLOTS = [
   "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", 
   "10:00", "10:30", "11:00", "11:30", "12:00", "12:30",
   "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", 
-  "16:00", "16:30", "17:00", "17:30", "18:00"
+  "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00"
 ];
 
 const DURATIONS = [
@@ -69,6 +69,20 @@ const DURATIONS = [
   { value: 60, label: "1 heure" },
   { value: 90, label: "1h30" },
   { value: 120, label: "2 heures" },
+  { value: 180, label: "3 heures" },
+  { value: 240, label: "4 heures" },
+];
+
+// Color palette for subjects
+const SUBJECT_COLORS = [
+  { bg: 'hsl(221 83% 53% / 0.15)', border: 'hsl(221 83% 53%)', text: 'hsl(221 83% 40%)' },
+  { bg: 'hsl(142 71% 45% / 0.15)', border: 'hsl(142 71% 45%)', text: 'hsl(142 71% 30%)' },
+  { bg: 'hsl(271 81% 56% / 0.15)', border: 'hsl(271 81% 56%)', text: 'hsl(271 81% 40%)' },
+  { bg: 'hsl(25 95% 53% / 0.15)', border: 'hsl(25 95% 53%)', text: 'hsl(25 95% 35%)' },
+  { bg: 'hsl(330 81% 60% / 0.15)', border: 'hsl(330 81% 60%)', text: 'hsl(330 81% 40%)' },
+  { bg: 'hsl(174 72% 40% / 0.15)', border: 'hsl(174 72% 40%)', text: 'hsl(174 72% 30%)' },
+  { bg: 'hsl(45 93% 47% / 0.15)', border: 'hsl(45 93% 47%)', text: 'hsl(45 93% 30%)' },
+  { bg: 'hsl(0 72% 51% / 0.15)', border: 'hsl(0 72% 51%)', text: 'hsl(0 72% 40%)' },
 ];
 
 const Timetable = () => {
@@ -80,7 +94,7 @@ const Timetable = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>("");
-  const [viewMode, setViewMode] = useState<'class' | 'teacher' | 'room'>('class');
+  const [viewMode, setViewMode] = useState<'class' | 'teacher'>('class');
   const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>("");
   const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
   const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null);
@@ -95,6 +109,18 @@ const Timetable = () => {
     room: "",
   });
 
+  // Generate color map for subjects
+  const subjectColorMap = useMemo(() => {
+    const map: Record<string, typeof SUBJECT_COLORS[0]> = {};
+    const uniqueSubjects = [...new Set(slots.map(s => s.subject?.name).filter(Boolean))];
+    uniqueSubjects.forEach((subject, index) => {
+      if (subject) {
+        map[subject] = SUBJECT_COLORS[index % SUBJECT_COLORS.length];
+      }
+    });
+    return map;
+  }, [slots]);
+
   useEffect(() => {
     fetchData();
   }, [role, teacherId, studentId]);
@@ -102,7 +128,6 @@ const Timetable = () => {
   const fetchData = async () => {
     setLoading(true);
     
-    // Fetch classes, subjects, teachers for admin
     if (role === 'admin') {
       const [classesRes, subjectsRes, teachersRes] = await Promise.all([
         supabase.from('classes').select('id, name, level').eq('is_active', true).order('name'),
@@ -118,7 +143,6 @@ const Timetable = () => {
       }
     }
     
-    // Fetch student's class
     if (role === 'student' && studentId) {
       const { data: student } = await supabase
         .from('students')
@@ -131,7 +155,6 @@ const Timetable = () => {
       }
     }
     
-    // Fetch teacher's classes
     if (role === 'teacher' && teacherId) {
       const { data: teacherClasses } = await supabase
         .from('teacher_classes')
@@ -168,7 +191,6 @@ const Timetable = () => {
     }
   };
 
-  // Conflict detection function
   const checkConflicts = useCallback((
     newSlot: { day_of_week: number; start_time: string; end_time: string; class_id: string; teacher_id: string; room: string },
     excludeSlotId?: string
@@ -178,7 +200,6 @@ const Timetable = () => {
     const newStart = newSlot.start_time;
     const newEnd = newSlot.end_time;
     
-    // Helper to check time overlap
     const hasOverlap = (existingStart: string, existingEnd: string) => {
       return newStart < existingEnd && newEnd > existingStart;
     };
@@ -192,7 +213,6 @@ const Timetable = () => {
       
       if (!hasOverlap(slotStart, slotEnd)) return;
       
-      // Check teacher conflict
       if (slot.teacher_id === newSlot.teacher_id) {
         const teacherName = slot.teacher?.profile ? 
           `${slot.teacher.profile.first_name} ${slot.teacher.profile.last_name}` : 'Ce professeur';
@@ -202,7 +222,6 @@ const Timetable = () => {
         });
       }
       
-      // Check class conflict
       if (slot.class_id === newSlot.class_id) {
         conflictList.push({
           type: 'class',
@@ -210,7 +229,6 @@ const Timetable = () => {
         });
       }
       
-      // Check room conflict
       if (newSlot.room && slot.room && slot.room === newSlot.room) {
         conflictList.push({
           type: 'room',
@@ -222,7 +240,6 @@ const Timetable = () => {
     return conflictList;
   }, [slots]);
 
-  // Calculate end time from start time and duration
   const calculateEndTime = (startTime: string, durationMinutes: number): string => {
     const [hours, minutes] = startTime.split(':').map(Number);
     const totalMinutes = hours * 60 + minutes + durationMinutes;
@@ -231,7 +248,6 @@ const Timetable = () => {
     return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
   };
 
-  // Update conflicts when form changes
   useEffect(() => {
     if (formData.class_id && formData.teacher_id && formData.start_time) {
       const endTime = calculateEndTime(formData.start_time, formData.duration);
@@ -264,7 +280,6 @@ const Timetable = () => {
 
     try {
       if (editingSlot) {
-        // Update existing slot
         const { error } = await supabase
           .from('timetable_slots')
           .update({
@@ -281,7 +296,6 @@ const Timetable = () => {
         if (error) throw error;
         toast({ title: "Succès", description: "Créneau modifié" });
       } else {
-        // Create new slot
         const { error } = await supabase.from('timetable_slots').insert({
           day_of_week: formData.day_of_week,
           start_time: formData.start_time,
@@ -352,15 +366,12 @@ const Timetable = () => {
     }
   };
 
-  // Filter slots based on view mode
   const getFilteredSlots = () => {
     switch (viewMode) {
       case 'class':
         return selectedClass ? slots.filter(s => s.class_id === selectedClass) : slots;
       case 'teacher':
         return selectedTeacherFilter ? slots.filter(s => s.teacher_id === selectedTeacherFilter) : slots;
-      case 'room':
-        return slots;
       default:
         return slots;
     }
@@ -368,85 +379,67 @@ const Timetable = () => {
 
   const filteredSlots = getFilteredSlots();
 
-  // Generate time slots array from start to end with 30-min intervals
-  const generateTimeRange = (startTime: string, endTime: string): string[] => {
-    const slots: string[] = [];
-    let [hours, minutes] = startTime.split(':').map(Number);
-    const [endHours, endMinutes] = endTime.split(':').map(Number);
-    
-    while (hours < endHours || (hours === endHours && minutes < endMinutes)) {
-      slots.push(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
-      minutes += 30;
-      if (minutes >= 60) {
-        hours += 1;
-        minutes = 0;
-      }
-    }
-    return slots;
-  };
-
-  // Calculate dynamic time slots based on actual lessons - now showing actual time blocks
-  const getDynamicTimeSlots = () => {
+  // Calculate grid parameters based on filtered slots
+  const gridParams = useMemo(() => {
     if (filteredSlots.length === 0) {
-      return generateTimeRange("08:00", "17:00");
+      return { startHour: 8, endHour: 17, totalRows: 9 };
     }
     
-    // Find the earliest start and latest end times
-    let earliestStart = "23:59";
-    let latestEnd = "00:00";
+    let minHour = 24;
+    let maxHour = 0;
     
     filteredSlots.forEach(slot => {
-      const startTime = slot.start_time.slice(0, 5);
-      const endTime = slot.end_time.slice(0, 5);
-      if (startTime < earliestStart) earliestStart = startTime;
-      if (endTime > latestEnd) latestEnd = endTime;
+      const startH = parseInt(slot.start_time.slice(0, 2));
+      const endH = parseInt(slot.end_time.slice(0, 2));
+      const endM = parseInt(slot.end_time.slice(3, 5));
+      
+      if (startH < minHour) minHour = startH;
+      if (endM > 0 ? endH + 1 : endH > maxHour) maxHour = endM > 0 ? endH + 1 : endH;
     });
     
-    // Generate continuous time slots
-    return generateTimeRange(earliestStart, latestEnd);
+    // Add padding
+    minHour = Math.max(7, minHour);
+    maxHour = Math.min(20, maxHour);
+    
+    return { 
+      startHour: minHour, 
+      endHour: maxHour, 
+      totalRows: maxHour - minHour 
+    };
+  }, [filteredSlots]);
+
+  // Generate hour labels
+  const hourLabels = useMemo(() => {
+    const labels = [];
+    for (let h = gridParams.startHour; h < gridParams.endHour; h++) {
+      labels.push(`${String(h).padStart(2, '0')}:00`);
+    }
+    return labels;
+  }, [gridParams]);
+
+  // Calculate slot position and span
+  const getSlotGridStyle = (slot: TimetableSlot) => {
+    const startH = parseInt(slot.start_time.slice(0, 2));
+    const startM = parseInt(slot.start_time.slice(3, 5));
+    const endH = parseInt(slot.end_time.slice(0, 2));
+    const endM = parseInt(slot.end_time.slice(3, 5));
+    
+    // Row calculation (1-indexed, first row is header)
+    const startMinutesFromGridStart = (startH - gridParams.startHour) * 60 + startM;
+    const endMinutesFromGridStart = (endH - gridParams.startHour) * 60 + endM;
+    
+    // Each hour = 60px, so each minute = 1px
+    const top = startMinutesFromGridStart;
+    const height = endMinutesFromGridStart - startMinutesFromGridStart;
+    
+    return { top, height };
   };
 
-  const dynamicTimeSlots = getDynamicTimeSlots();
-
-  // Check if a slot spans a specific time range
-  const getSlotsAtTime = (day: number, time: string) => {
-    return filteredSlots.filter(s => {
-      const slotStart = s.start_time.slice(0, 5);
-      const slotEnd = s.end_time.slice(0, 5);
-      return s.day_of_week === day && slotStart <= time && slotEnd > time;
-    });
+  // Get slots for a specific day
+  const getSlotsForDay = (dayValue: number) => {
+    return filteredSlots.filter(s => s.day_of_week === dayValue);
   };
 
-  // Check if this is the starting cell for a slot
-  const isSlotStartingHere = (slot: TimetableSlot, time: string) => {
-    return slot.start_time.slice(0, 5) === time;
-  };
-
-  // Calculate row span for a slot based on 30-min intervals
-  const getSlotRowSpan = (slot: TimetableSlot) => {
-    const startTime = slot.start_time.slice(0, 5);
-    const endTime = slot.end_time.slice(0, 5);
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [endH, endM] = endTime.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-    return Math.max(1, Math.ceil((endMinutes - startMinutes) / 30));
-  };
-
-  const getColorForSubject = (subjectName: string) => {
-    const colors = [
-      'bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300',
-      'bg-green-100 border-green-300 text-green-800 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300',
-      'bg-purple-100 border-purple-300 text-purple-800 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300',
-      'bg-orange-100 border-orange-300 text-orange-800 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-300',
-      'bg-pink-100 border-pink-300 text-pink-800 dark:bg-pink-900/30 dark:border-pink-700 dark:text-pink-300',
-      'bg-teal-100 border-teal-300 text-teal-800 dark:bg-teal-900/30 dark:border-teal-700 dark:text-teal-300',
-    ];
-    const hash = subjectName.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    return colors[hash % colors.length];
-  };
-
-  // Get unique rooms for room view
   const uniqueRooms = [...new Set(slots.filter(s => s.room).map(s => s.room))].filter(Boolean) as string[];
 
   return (
@@ -464,26 +457,24 @@ const Timetable = () => {
           </div>
           <div className="flex flex-wrap gap-3">
             {role === 'admin' && (
-              <>
-                <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
-                  <TabsList>
-                    <TabsTrigger value="class" className="gap-1">
-                      <BookOpen className="w-4 h-4" />
-                      Par classe
-                    </TabsTrigger>
-                    <TabsTrigger value="teacher" className="gap-1">
-                      <User className="w-4 h-4" />
-                      Par enseignant
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </>
+              <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
+                <TabsList>
+                  <TabsTrigger value="class" className="gap-1">
+                    <BookOpen className="w-4 h-4" />
+                    Par classe
+                  </TabsTrigger>
+                  <TabsTrigger value="teacher" className="gap-1">
+                    <User className="w-4 h-4" />
+                    Par enseignant
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 items-center">
           {viewMode === 'class' && (
             <Select value={selectedClass} onValueChange={setSelectedClass}>
               <SelectTrigger className="w-[200px]">
@@ -496,7 +487,7 @@ const Timetable = () => {
               </SelectContent>
             </Select>
           )}
-          
+
           {viewMode === 'teacher' && role === 'admin' && (
             <Select value={selectedTeacherFilter} onValueChange={setSelectedTeacherFilter}>
               <SelectTrigger className="w-[200px]">
@@ -530,7 +521,6 @@ const Timetable = () => {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
-                  {/* Conflicts Alert */}
                   {conflicts.length > 0 && (
                     <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
                       <div className="flex items-start gap-2">
@@ -656,7 +646,6 @@ const Timetable = () => {
                     </Select>
                   </div>
                   
-                  {/* Preview */}
                   <div className="p-3 rounded-lg bg-muted/50 border">
                     <p className="text-sm text-muted-foreground">
                       <strong>Créneau :</strong> {DAYS.find(d => d.value === formData.day_of_week)?.label} de {formData.start_time} à {calculateEndTime(formData.start_time, formData.duration)}
@@ -676,104 +665,157 @@ const Timetable = () => {
           )}
         </div>
 
-        {/* Timetable Grid */}
+        {/* Calendar-Style Timetable Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : (
-          <Card>
-            <CardContent className="p-0 overflow-x-auto">
-              <div className="min-w-[900px]">
-                {/* Header Row */}
-                <div className="grid grid-cols-7 border-b bg-muted/50">
-                  <div className="p-3 font-semibold text-muted-foreground text-sm border-r flex items-center gap-2">
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <div 
+                  className="min-w-[800px]"
+                  style={{ 
+                    display: 'grid',
+                    gridTemplateColumns: '80px repeat(6, 1fr)',
+                  }}
+                >
+                  {/* Header Row */}
+                  <div className="bg-muted/50 border-b border-r p-3 font-semibold text-muted-foreground text-sm flex items-center gap-2 sticky left-0 z-20">
                     <Clock className="w-4 h-4" />
-                    Horaire
                   </div>
                   {DAYS.map(day => (
-                    <div key={day.value} className="p-3 font-semibold text-foreground text-center text-sm">
-                      {day.label}
+                    <div 
+                      key={day.value} 
+                      className="bg-muted/50 border-b p-3 font-semibold text-foreground text-center text-sm"
+                    >
+                      <span className="hidden sm:inline">{day.label}</span>
+                      <span className="sm:hidden">{day.short}</span>
                     </div>
                   ))}
-                </div>
 
-                {/* Dynamic Time Slots based on actual lessons */}
-                {dynamicTimeSlots.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    Aucun créneau défini. Ajoutez des cours pour voir l'emploi du temps.
-                  </div>
-                ) : (
-                  dynamicTimeSlots.map((time, idx) => {
-                    const nextTime = dynamicTimeSlots[idx + 1] || calculateEndTime(time, 30);
-                    return (
-                      <div key={time} className="grid grid-cols-7 border-b last:border-b-0" style={{ minHeight: '50px' }}>
-                        <div className="p-2 text-xs text-muted-foreground border-r bg-muted/30 font-medium flex items-center justify-center">
+                  {/* Time Column + Day Columns with Slots */}
+                  <div 
+                    className="contents"
+                    style={{ display: 'contents' }}
+                  >
+                    {/* Time Labels Column */}
+                    <div 
+                      className="border-r bg-muted/30 sticky left-0 z-10"
+                      style={{ 
+                        display: 'grid',
+                        gridTemplateRows: `repeat(${gridParams.totalRows}, 60px)` 
+                      }}
+                    >
+                      {hourLabels.map((time, idx) => (
+                        <div 
+                          key={time} 
+                          className="px-2 py-1 text-xs text-muted-foreground font-medium flex items-start justify-end border-b"
+                        >
                           {time}
                         </div>
-                        {DAYS.map(day => {
-                          const slotsAtTime = getSlotsAtTime(day.value, time);
-                          const startingSlots = slotsAtTime.filter(s => isSlotStartingHere(s, time));
-                          const continuingSlots = slotsAtTime.filter(s => !isSlotStartingHere(s, time));
-                          
-                          return (
+                      ))}
+                    </div>
+
+                    {/* Day Columns */}
+                    {DAYS.map(day => {
+                      const daySlots = getSlotsForDay(day.value);
+                      
+                      return (
+                        <div 
+                          key={day.value} 
+                          className="relative border-r last:border-r-0"
+                          style={{ 
+                            height: `${gridParams.totalRows * 60}px`,
+                          }}
+                        >
+                          {/* Hour grid lines */}
+                          {hourLabels.map((_, idx) => (
                             <div 
-                              key={day.value} 
-                              className={`p-0.5 relative group border-r last:border-r-0 ${continuingSlots.length > 0 && startingSlots.length === 0 ? 'bg-transparent' : ''}`}
-                            >
-                              {startingSlots.map(slot => {
-                                const rowSpan = getSlotRowSpan(slot);
-                                const heightPx = rowSpan * 50; // 50px per 30-min slot
-                                
-                                return (
-                                  <div 
-                                    key={slot.id}
-                                    className={`p-2 rounded-lg border text-xs cursor-pointer hover:shadow-md transition-shadow absolute left-0.5 right-0.5 ${getColorForSubject(slot.subject?.name || '')} group/slot`}
-                                    style={{ 
-                                      height: `${heightPx - 4}px`,
-                                      zIndex: 10 
-                                    }}
-                                    onClick={() => role === 'admin' && openEditDialog(slot)}
-                                  >
-                                    <div className="font-semibold truncate">{slot.subject?.name}</div>
-                                    <div className="text-[10px] opacity-80 truncate mt-0.5">
-                                      {viewMode === 'teacher' ? slot.class?.name : 
-                                       slot.teacher?.profile ? `${slot.teacher.profile.first_name} ${slot.teacher.profile.last_name}` : ''}
+                              key={idx}
+                              className="absolute w-full border-b border-dashed border-muted-foreground/20"
+                              style={{ top: `${(idx + 1) * 60}px` }}
+                            />
+                          ))}
+                          
+                          {/* Slot blocks */}
+                          {daySlots.map(slot => {
+                            const { top, height } = getSlotGridStyle(slot);
+                            const colors = subjectColorMap[slot.subject?.name || ''] || SUBJECT_COLORS[0];
+                            
+                            return (
+                              <div
+                                key={slot.id}
+                                className="absolute left-1 right-1 rounded-md cursor-pointer transition-all hover:shadow-lg hover:z-10 group overflow-hidden"
+                                style={{
+                                  top: `${top}px`,
+                                  height: `${Math.max(height - 2, 20)}px`,
+                                  backgroundColor: colors.bg,
+                                  borderLeft: `3px solid ${colors.border}`,
+                                }}
+                                onClick={() => role === 'admin' && openEditDialog(slot)}
+                              >
+                                <div className="p-1.5 h-full flex flex-col" style={{ color: colors.text }}>
+                                  <div className="font-semibold text-xs truncate">
+                                    {slot.subject?.name}
+                                  </div>
+                                  {height >= 40 && (
+                                    <div className="text-[10px] opacity-80 truncate">
+                                      {viewMode === 'teacher' 
+                                        ? slot.class?.name 
+                                        : slot.teacher?.profile 
+                                          ? `${slot.teacher.profile.first_name} ${slot.teacher.profile.last_name}`
+                                          : ''}
                                     </div>
-                                    <div className="text-[10px] opacity-70 flex items-center gap-1 mt-0.5">
+                                  )}
+                                  {height >= 55 && (
+                                    <div className="text-[10px] opacity-70 flex items-center gap-1 mt-auto">
                                       <Clock className="w-2.5 h-2.5" />
                                       {slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)}
                                     </div>
-                                    {slot.room && (
-                                      <div className="text-[10px] opacity-70 flex items-center gap-0.5">
-                                        <MapPin className="w-2.5 h-2.5" />
-                                        {slot.room}
-                                      </div>
-                                    )}
-                                    {role === 'admin' && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="absolute -top-1 -right-1 h-5 w-5 opacity-0 group-hover/slot:opacity-100 bg-background shadow-sm"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDelete(slot.id);
-                                        }}
-                                      >
-                                        <Trash2 className="w-3 h-3 text-destructive" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                )}
+                                  )}
+                                  {height >= 70 && slot.room && (
+                                    <div className="text-[10px] opacity-70 flex items-center gap-1">
+                                      <MapPin className="w-2.5 h-2.5" />
+                                      {slot.room}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Delete button */}
+                                  {role === 'admin' && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="absolute top-0.5 right-0.5 h-5 w-5 opacity-0 group-hover:opacity-100 bg-background/80 shadow-sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete(slot.id);
+                                      }}
+                                    >
+                                      <Trash2 className="w-3 h-3 text-destructive" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
+              
+              {filteredSlots.length === 0 && (
+                <div className="p-12 text-center text-muted-foreground">
+                  <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Aucun cours programmé</p>
+                  {role === 'admin' && (
+                    <p className="text-sm mt-2">Cliquez sur "Ajouter un créneau" pour commencer</p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

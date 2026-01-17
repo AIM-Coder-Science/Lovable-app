@@ -27,6 +27,7 @@ import {
   CalendarDays,
   Menu,
   UserCircle,
+  Inbox,
 } from "lucide-react";
 
 type UserRole = "admin" | "teacher" | "student";
@@ -48,6 +49,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard", roles: ["admin", "teacher", "student"] },
   { icon: Bell, label: "Actualités", href: "/actualites", roles: ["admin", "teacher", "student"] },
+  { icon: Inbox, label: "Notifications", href: "/notifications", roles: ["admin"] },
   { icon: Calendar, label: "Emploi du temps", href: "/timetable", roles: ["admin", "teacher", "student"] },
   { icon: CalendarDays, label: "Événements", href: "/events", roles: ["admin", "teacher", "student"] },
   { icon: Building2, label: "Administration", href: "/administration", roles: ["admin", "teacher", "student"] },

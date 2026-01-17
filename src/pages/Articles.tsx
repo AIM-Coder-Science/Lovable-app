@@ -45,6 +45,7 @@ const Articles = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
 
   const fetchArticles = async () => {
     setLoading(true);
@@ -145,54 +146,52 @@ const Articles = () => {
     setIsProcessing(true);
 
     try {
-      // For online payments (FedaPay: card, mobile money)
-      if (['fedapay', 'card', 'momo', 'flooz'].includes(paymentMethod)) {
-        const { data, error } = await supabase.functions.invoke('initiate-payment', {
-          body: {
-            amount: amount,
-            studentId: studentId,
-            articleId: selectedArticle.id,
-            paymentMethod: paymentMethod,
-            description: `Paiement ${selectedArticle.name}`,
-            callbackUrl: `${window.location.origin}/articles`,
-          },
+      // Payments are always initiated server-side (also for cash) so we can:
+      // - create the transaction record
+      // - notify admins for cash requests
+      // - keep secrets off the client
+      const { data, error } = await supabase.functions.invoke('initiate-payment', {
+        body: {
+          amount,
+          studentId,
+          articleId: selectedArticle.id,
+          paymentMethod,
+          description: `Paiement ${selectedArticle.name}`,
+          callbackUrl: `${window.location.origin}/articles`,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      if (paymentMethod === 'cash') {
+        toast({
+          title: 'Demande envoyée',
+          description: data?.message || "Votre demande de paiement en espèces a été envoyée à l'administration.",
         });
-
-        if (error) throw error;
-        if (data.error) throw new Error(data.error);
-
-        if (data.paymentUrl) {
-          toast({ 
-            title: "Redirection", 
-            description: "Vous allez être redirigé vers la page de paiement..." 
-          });
-          // Open payment URL in new window
-          window.open(data.paymentUrl, '_blank');
-        }
-
         setIsPaymentDialogOpen(false);
         setIsProcessing(false);
         return;
       }
 
-      // For cash payment (handled by admin)
-      await supabase.from('payment_transactions').insert({
-        student_id: studentId,
-        article_id: selectedArticle.id,
-        amount: amount,
-        payment_method: 'cash',
-        status: 'pending',
-        notes: 'En attente de validation par l\'administration',
-      });
+      if (data?.paymentUrl) {
+        toast({
+          title: 'Redirection',
+          description: 'Vous allez être redirigé vers la page de paiement…',
+        });
+        window.open(data.paymentUrl, '_blank');
+      } else {
+        toast({
+          title: 'Paiement initié',
+          description: 'La transaction a été créée, mais aucun lien de paiement n’a été retourné.',
+          variant: 'destructive',
+        });
+      }
 
-      toast({ 
-        title: "Demande envoyée", 
-        description: "Votre demande de paiement en espèces a été envoyée à l'administration" 
-      });
       setIsPaymentDialogOpen(false);
       setIsProcessing(false);
     } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+      toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
       setIsProcessing(false);
     }
   };
@@ -217,8 +216,6 @@ const Articles = () => {
       </DashboardLayout>
     );
   }
-
-  const [showOrders, setShowOrders] = useState(false);
 
   // Calculate totals for orders
   const totalOrdered = studentArticles.reduce((acc, sa) => acc + sa.amount, 0);

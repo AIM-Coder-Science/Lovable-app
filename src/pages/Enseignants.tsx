@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Pencil, Trash2, UserCheck, Search, X, BookOpen, School, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, UserCheck, Search, X, BookOpen, School, Eye, AlertCircle } from "lucide-react";
 import { StatusToggle } from "@/components/ui/status-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
@@ -77,6 +77,7 @@ const Enseignants = () => {
     subjectId: "",
     isPrincipal: false,
   });
+  const [classHasPP, setClassHasPP] = useState(false);
 
   const fetchTeachers = async () => {
     setLoading(true);
@@ -143,6 +144,27 @@ const Enseignants = () => {
     fetchTeachers();
     fetchSubjectsAndClasses();
   }, []);
+
+  // Check if selected class already has a PP
+  useEffect(() => {
+    const checkClassHasPP = async () => {
+      if (!assignmentData.classId) {
+        setClassHasPP(false);
+        return;
+      }
+      
+      const { data } = await supabase
+        .from('teacher_classes')
+        .select('id')
+        .eq('class_id', assignmentData.classId)
+        .eq('is_principal', true)
+        .maybeSingle();
+      
+      setClassHasPP(!!data);
+    };
+    
+    checkClassHasPP();
+  }, [assignmentData.classId]);
 
   const handleCreateTeacher = async () => {
     if (!formData.firstName || !formData.lastName || !formData.email) {
@@ -304,11 +326,7 @@ const Enseignants = () => {
         })
         .eq('id', selectedTeacher.profile_id);
 
-      // Update teacher
-      await supabase
-        .from('teachers')
-        .update({ employee_id: editFormData.employeeId || null })
-        .eq('id', selectedTeacher.id);
+      // Note: We don't update employee_id anymore since it's auto-generated
 
       // Update specialties
       await supabase.from('teacher_specialties').delete().eq('teacher_id', selectedTeacher.id);
@@ -629,13 +647,20 @@ const Enseignants = () => {
                   Spécialités de l'enseignant: {selectedTeacher?.specialties.map(s => s.subject_name).join(', ') || 'Aucune'}
                 </p>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={assignmentData.isPrincipal}
-                  onCheckedChange={(checked) => setAssignmentData({...assignmentData, isPrincipal: !!checked})}
-                />
-                <span className="text-sm">Professeur principal de cette classe</span>
-              </label>
+              {classHasPP ? (
+                <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                  <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Cette classe a déjà un professeur principal</span>
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={assignmentData.isPrincipal}
+                    onCheckedChange={(checked) => setAssignmentData({...assignmentData, isPrincipal: !!checked})}
+                  />
+                  <span className="text-sm">Professeur principal de cette classe</span>
+                </label>
+              )}
               <Button onClick={handleAssignClass} className="w-full">Assigner</Button>
             </div>
           </DialogContent>
@@ -742,8 +767,10 @@ const Enseignants = () => {
                 <Label>Matricule employé</Label>
                 <Input 
                   value={editFormData.employeeId} 
-                  onChange={e => setEditFormData({...editFormData, employeeId: e.target.value})} 
+                  disabled
+                  className="bg-muted cursor-not-allowed"
                 />
+                <p className="text-xs text-muted-foreground mt-1">Le matricule est généré automatiquement et ne peut pas être modifié</p>
               </div>
               <div>
                 <Label>Spécialités (matières)</Label>

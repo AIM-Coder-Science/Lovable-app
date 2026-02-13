@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_permissions: {
+        Row: {
+          admin_user_id: string
+          can_manage_admins: boolean | null
+          can_manage_articles: boolean | null
+          can_manage_classes: boolean | null
+          can_manage_documents: boolean | null
+          can_manage_events: boolean | null
+          can_manage_invoices: boolean | null
+          can_manage_publications: boolean | null
+          can_manage_students: boolean | null
+          can_manage_subjects: boolean | null
+          can_manage_teachers: boolean | null
+          can_manage_timetable: boolean | null
+          can_sign_bulletins: boolean | null
+          created_at: string | null
+          created_by_user_id: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          admin_user_id: string
+          can_manage_admins?: boolean | null
+          can_manage_articles?: boolean | null
+          can_manage_classes?: boolean | null
+          can_manage_documents?: boolean | null
+          can_manage_events?: boolean | null
+          can_manage_invoices?: boolean | null
+          can_manage_publications?: boolean | null
+          can_manage_students?: boolean | null
+          can_manage_subjects?: boolean | null
+          can_manage_teachers?: boolean | null
+          can_manage_timetable?: boolean | null
+          can_sign_bulletins?: boolean | null
+          created_at?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          admin_user_id?: string
+          can_manage_admins?: boolean | null
+          can_manage_articles?: boolean | null
+          can_manage_classes?: boolean | null
+          can_manage_documents?: boolean | null
+          can_manage_events?: boolean | null
+          can_manage_invoices?: boolean | null
+          can_manage_publications?: boolean | null
+          can_manage_students?: boolean | null
+          can_manage_subjects?: boolean | null
+          can_manage_teachers?: boolean | null
+          can_manage_timetable?: boolean | null
+          can_sign_bulletins?: boolean | null
+          created_at?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       administration_members: {
         Row: {
           created_at: string
@@ -538,6 +598,7 @@ export type Database = {
         Row: {
           amount: number
           article_id: string | null
+          category: string | null
           created_at: string
           id: string
           invoice_id: string | null
@@ -552,6 +613,7 @@ export type Database = {
         Insert: {
           amount: number
           article_id?: string | null
+          category?: string | null
           created_at?: string
           id?: string
           invoice_id?: string | null
@@ -566,6 +628,7 @@ export type Database = {
         Update: {
           amount?: number
           article_id?: string | null
+          category?: string | null
           created_at?: string
           id?: string
           invoice_id?: string | null
@@ -614,6 +677,7 @@ export type Database = {
           created_at: string
           email: string
           first_name: string
+          generated_password_hash: string | null
           id: string
           is_active: boolean
           last_name: string
@@ -626,6 +690,7 @@ export type Database = {
           created_at?: string
           email: string
           first_name: string
+          generated_password_hash?: string | null
           id?: string
           is_active?: boolean
           last_name: string
@@ -638,6 +703,7 @@ export type Database = {
           created_at?: string
           email?: string
           first_name?: string
+          generated_password_hash?: string | null
           id?: string
           is_active?: boolean
           last_name?: string
@@ -682,6 +748,61 @@ export type Database = {
           visibility?: string
         }
         Relationships: []
+      }
+      sanctions: {
+        Row: {
+          class_id: string
+          created_at: string
+          description: string | null
+          id: string
+          reason: string
+          sanction_type: string
+          student_id: string
+          teacher_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          reason: string
+          sanction_type?: string
+          student_id: string
+          teacher_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          reason?: string
+          sanction_type?: string
+          student_id?: string
+          teacher_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sanctions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sanctions_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sanctions_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "teachers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       school_settings: {
         Row: {
@@ -829,6 +950,7 @@ export type Database = {
       }
       subject_level_coefficients: {
         Row: {
+          class_id: string | null
           coefficient: number
           created_at: string
           id: string
@@ -836,6 +958,7 @@ export type Database = {
           subject_id: string
         }
         Insert: {
+          class_id?: string | null
           coefficient?: number
           created_at?: string
           id?: string
@@ -843,6 +966,7 @@ export type Database = {
           subject_id: string
         }
         Update: {
+          class_id?: string | null
           coefficient?: number
           created_at?: string
           id?: string
@@ -850,6 +974,13 @@ export type Database = {
           subject_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "subject_level_coefficients_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "subject_level_coefficients_subject_id_fkey"
             columns: ["subject_id"]
@@ -1153,6 +1284,30 @@ export type Database = {
           },
         ]
       }
+      user_credentials: {
+        Row: {
+          created_at: string | null
+          generated_password: string
+          id: string
+          user_id: string
+          viewed_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          generated_password: string
+          id?: string
+          user_id: string
+          viewed_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          generated_password?: string
+          id?: string
+          user_id?: string
+          viewed_at?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1179,6 +1334,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_admin: {
+        Args: { manager_id: string; target_id: string }
+        Returns: boolean
+      }
       generate_matricule: { Args: { p_prefix: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
@@ -1195,6 +1354,8 @@ export type Database = {
         Args: { _class_id: string; _user_id: string }
         Returns: boolean
       }
+      is_super_admin: { Args: { user_id: string }; Returns: boolean }
+      normalize_class_name: { Args: { name: string }; Returns: string }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"

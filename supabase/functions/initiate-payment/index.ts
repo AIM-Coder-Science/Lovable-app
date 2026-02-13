@@ -45,9 +45,10 @@ serve(async (req) => {
       studentId, 
       articleId, 
       invoiceId,
-      paymentMethod, // 'fedapay', 'card', 'momo', 'flooz'
+      paymentMethod, // 'fedapay', 'card', 'momo', 'flooz', 'cash'
       description,
       callbackUrl,
+      category, // 'fee', 'article', 'salary'
     } = body;
 
     if (!amount || (!articleId && !invoiceId)) {
@@ -89,6 +90,7 @@ serve(async (req) => {
         status: 'pending',
         transaction_ref: transactionRef,
         notes: description,
+        category: category || (articleId ? 'article' : invoiceId ? 'fee' : 'article'),
       })
       .select()
       .single();

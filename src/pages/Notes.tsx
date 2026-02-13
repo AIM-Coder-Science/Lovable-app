@@ -96,14 +96,19 @@ const Notes = () => {
       .from('subject_level_coefficients')
       .select('*');
 
-    const coeffMap = new Map<string, number>();
+    const levelCoeffMap = new Map<string, number>();
+    const classCoeffMap = new Map<string, number>();
     levelCoeffs?.forEach((lc: any) => {
-      coeffMap.set(`${lc.subject_id}-${lc.level}`, lc.coefficient);
+      if (lc.class_id) {
+        classCoeffMap.set(`${lc.subject_id}-${lc.class_id}`, lc.coefficient);
+      } else {
+        levelCoeffMap.set(`${lc.subject_id}-${lc.level}`, lc.coefficient);
+      }
     });
 
     const formattedData = (data || []).map((tc: any) => {
       const level = tc.classes?.level || '';
-      const levelCoeff = coeffMap.get(`${tc.subject_id}-${level}`);
+      const levelCoeff = classCoeffMap.get(`${tc.subject_id}-${tc.class_id}`) ?? levelCoeffMap.get(`${tc.subject_id}-${level}`);
       return {
         class_id: tc.class_id,
         subject_id: tc.subject_id,

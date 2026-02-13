@@ -6,7 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Generate a random password
 function generatePassword(length = 12): string {
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
@@ -15,18 +14,15 @@ function generatePassword(length = 12): string {
   const all = uppercase + lowercase + numbers + special;
   
   let password = '';
-  // Ensure at least one of each type
   password += uppercase[Math.floor(Math.random() * uppercase.length)];
   password += lowercase[Math.floor(Math.random() * lowercase.length)];
   password += numbers[Math.floor(Math.random() * numbers.length)];
   password += special[Math.floor(Math.random() * special.length)];
   
-  // Fill the rest
   for (let i = password.length; i < length; i++) {
     password += all[Math.floor(Math.random() * all.length)];
   }
   
-  // Shuffle the password
   return password.split('').sort(() => Math.random() - 0.5).join('');
 }
 
@@ -40,18 +36,13 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
+      auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Verify the request is from an authenticated admin
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Non autorisé' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -60,12 +51,10 @@ serve(async (req) => {
     
     if (authError || !callingUser) {
       return new Response(JSON.stringify({ error: 'Non autorisé' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Check if calling user is admin
     const { data: roleData } = await supabaseAdmin
       .from('user_roles')
       .select('role')
@@ -74,38 +63,123 @@ serve(async (req) => {
 
     if (!roleData || roleData.role !== 'admin') {
       return new Response(JSON.stringify({ error: 'Accès refusé - Admin requis' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const body = await req.json();
     const { 
-      firstName, 
-      lastName, 
-      phone,
-      userType, // 'teacher' or 'student'
-      // Teacher specific
-      employeeId,
-      specialties, // array of subject_ids
-      // Student specific
-      classId,
-      birthday,
-      parentName,
-      parentPhone,
-      // Optional - if not provided, will be auto-generated
-      matricule,
+      firstName, lastName, phone, userType,
+      specialties, classId, birthday, parentName, parentPhone,
+      matricule, email, permissions
     } = body;
 
-    // Validation
     if (!firstName || !lastName || !userType) {
       return new Response(JSON.stringify({ error: 'Champs obligatoires manquants' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Auto-generate matricule if not provided
+    // For admin creation, verify caller has can_manage_admins permission
+    if (userType === 'admin') {
+      const { data: isSuperAdmin } = await supabaseAdmin.rpc('is_super_admin', { user_id: callingUser.id });
+      
+      if (!isSuperAdmin) {
+        const { data: callerPerms } = await supabaseAdmin
+          .from('admin_permissions')
+          .select('can_manage_admins')
+          .eq('admin_user_id', callingUser.id)
+          .maybeSingle();
+        
+        if (!callerPerms?.can_manage_admins) {
+          return new Response(JSON.stringify({ error: 'Vous n\'avez pas la permission de créer des administrateurs' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      if (!email) {
+        return new Response(JSON.stringify({ error: 'L\'email est requis pour un administrateur' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const generatedPassword = generatePassword(12);
+
+      const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: generatedPassword,
+        email_confirm: true,
+        user_metadata: { first_name: firstName, last_name: lastName },
+      });
+
+      if (createError) {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const newUser = authData.user;
+
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          user_id: newUser.id,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone: phone || null,
+        });
+
+      if (profileError) {
+        await supabaseAdmin.auth.admin.deleteUser(newUser.id);
+        return new Response(JSON.stringify({ error: 'Erreur lors de la création du profil' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const { error: roleError } = await supabaseAdmin
+        .from('user_roles')
+        .insert({ user_id: newUser.id, role: 'admin' });
+
+      if (roleError) {
+        await supabaseAdmin.auth.admin.deleteUser(newUser.id);
+        return new Response(JSON.stringify({ error: 'Erreur lors de l\'assignation du rôle' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Create admin_permissions
+      const permData: Record<string, any> = {
+        admin_user_id: newUser.id,
+        created_by_user_id: callingUser.id,
+      };
+      if (permissions) {
+        Object.keys(permissions).forEach(key => {
+          permData[key] = permissions[key];
+        });
+      }
+
+      await supabaseAdmin.from('admin_permissions').insert(permData);
+
+      // Store credentials
+      await supabaseAdmin.from('user_credentials').insert({
+        user_id: newUser.id,
+        generated_password: generatedPassword,
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        userId: newUser.id,
+        email,
+        generatedPassword,
+        message: 'Administrateur créé avec succès',
+      }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Teacher / Student creation (existing logic)
     let finalMatricule = matricule;
     if (!finalMatricule) {
       const prefix = userType === 'teacher' ? 'EN' : 'AP';
@@ -113,47 +187,32 @@ serve(async (req) => {
         .rpc('generate_matricule', { p_prefix: prefix });
       
       if (matriculeError) {
-        console.error('Matricule generation error:', matriculeError);
         return new Response(JSON.stringify({ error: 'Erreur lors de la génération du matricule' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
       finalMatricule = matriculeData;
     }
 
-    // Auto-generate email: first letter of lastName + first letter of firstName + numbers from matricule + @tintin.edugest
     const matriculeNumbers = finalMatricule.replace(/\D/g, '');
     const generatedEmail = `${lastName.charAt(0).toLowerCase()}${firstName.charAt(0).toLowerCase()}${matriculeNumbers}@tintin.edugest`;
-    
-    // Generate a random password
     const generatedPassword = generatePassword(12);
 
-    console.log(`Creating ${userType}: ${generatedEmail} with matricule ${finalMatricule}`);
-
-    // Create auth user using admin API
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: generatedEmail,
       password: generatedPassword,
       email_confirm: true,
-      user_metadata: {
-        first_name: firstName,
-        last_name: lastName,
-      }
+      user_metadata: { first_name: firstName, last_name: lastName },
     });
 
     if (createError) {
-      console.error('Auth creation error:', createError);
       return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const newUser = authData.user;
-    console.log('User created:', newUser.id);
 
-    // Create profile
     const { data: profileData, error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
@@ -167,41 +226,27 @@ serve(async (req) => {
       .single();
 
     if (profileError) {
-      console.error('Profile creation error:', profileError);
-      // Rollback: delete auth user
       await supabaseAdmin.auth.admin.deleteUser(newUser.id);
       return new Response(JSON.stringify({ error: 'Erreur lors de la création du profil' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    console.log('Profile created:', profileData.id);
-
-    // Assign role
     const role = userType === 'teacher' ? 'teacher' : 'student';
     const { error: roleError } = await supabaseAdmin
       .from('user_roles')
-      .insert({
-        user_id: newUser.id,
-        role: role,
-      });
+      .insert({ user_id: newUser.id, role });
 
     if (roleError) {
-      console.error('Role assignment error:', roleError);
       await supabaseAdmin.auth.admin.deleteUser(newUser.id);
       return new Response(JSON.stringify({ error: 'Erreur lors de l\'assignation du rôle' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    console.log('Role assigned:', role);
 
     let entityId = null;
 
     if (userType === 'teacher') {
-      // Create teacher record
       const { data: teacherData, error: teacherError } = await supabaseAdmin
         .from('teachers')
         .insert({
@@ -213,36 +258,23 @@ serve(async (req) => {
         .single();
 
       if (teacherError) {
-        console.error('Teacher creation error:', teacherError);
         await supabaseAdmin.auth.admin.deleteUser(newUser.id);
         return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'enseignant' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       entityId = teacherData.id;
-      console.log('Teacher created:', entityId);
 
-      // Add specialties if provided
       if (specialties && specialties.length > 0) {
-        const specialtiesInsert = specialties.map((subjectId: string) => ({
-          teacher_id: teacherData.id,
-          subject_id: subjectId,
-        }));
-
-        const { error: specError } = await supabaseAdmin
-          .from('teacher_specialties')
-          .insert(specialtiesInsert);
-
-        if (specError) {
-          console.error('Specialties error:', specError);
-        } else {
-          console.log('Specialties added:', specialties.length);
-        }
+        await supabaseAdmin.from('teacher_specialties').insert(
+          specialties.map((subjectId: string) => ({
+            teacher_id: teacherData.id,
+            subject_id: subjectId,
+          }))
+        );
       }
     } else {
-      // Create student record
       const { data: studentData, error: studentError } = await supabaseAdmin
         .from('students')
         .insert({
@@ -258,36 +290,35 @@ serve(async (req) => {
         .single();
 
       if (studentError) {
-        console.error('Student creation error:', studentError);
         await supabaseAdmin.auth.admin.deleteUser(newUser.id);
         return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'étudiant' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       entityId = studentData.id;
-      console.log('Student created:', entityId);
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    await supabaseAdmin.from('user_credentials').insert({
+      user_id: newUser.id,
+      generated_password: generatedPassword,
+    });
+
+    return new Response(JSON.stringify({
+      success: true,
       userId: newUser.id,
-      entityId: entityId,
+      entityId,
       matricule: finalMatricule,
       email: generatedEmail,
-      generatedPassword: generatedPassword,
-      message: `${userType === 'teacher' ? 'Enseignant' : 'Apprenant'} créé avec succès`
+      generatedPassword,
+      message: `${userType === 'teacher' ? 'Enseignant' : 'Apprenant'} créé avec succès`,
     }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error: any) {
-    console.error('Unexpected error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });

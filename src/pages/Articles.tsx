@@ -3,7 +3,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -158,6 +158,7 @@ const Articles = () => {
           paymentMethod,
           description: `Paiement ${selectedArticle.name}`,
           callbackUrl: `${window.location.origin}/articles`,
+          category: 'article',
         },
       });
 
@@ -179,7 +180,7 @@ const Articles = () => {
           title: 'Redirection',
           description: 'Vous allez être redirigé vers la page de paiement…',
         });
-        window.open(data.paymentUrl, '_blank');
+        window.location.href = data.paymentUrl;
       } else {
         toast({
           title: 'Paiement initié',
@@ -387,6 +388,7 @@ const Articles = () => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Paiement - {selectedArticle?.name}</DialogTitle>
+              <DialogDescription className="sr-only">Formulaire de paiement pour l'article sélectionné</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <div>
@@ -396,6 +398,9 @@ const Articles = () => {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   placeholder="Montant"
+                  min={1}
+                  readOnly
+                  className="bg-muted cursor-not-allowed"
                 />
               </div>
               

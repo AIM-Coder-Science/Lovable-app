@@ -5,14 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Receipt, Plus, Search, Filter, CreditCard, AlertCircle, 
   CheckCircle, Clock, DollarSign, Users, TrendingUp, FileText,
-  Wallet, Building
+  Wallet, Building, Calendar, User, Hash
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +39,18 @@ interface Invoice {
   };
 }
 
+interface StudentArticle {
+  id: string;
+  article_id: string;
+  amount: number;
+  amount_paid: number;
+  status: string;
+  created_at: string;
+  article: {
+    name: string;
+  };
+}
+
 interface TeacherPayment {
   id: string;
   teacher_id: string;
@@ -58,11 +70,19 @@ interface Student {
   class?: { name: string };
 }
 
+interface StudentProfile {
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 const Invoices = () => {
   const { role, studentId, teacherId, loading: authLoading } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [studentArticles, setStudentArticles] = useState<StudentArticle[]>([]);
   const [teacherPayments, setTeacherPayments] = useState<TeacherPayment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -70,6 +90,7 @@ const Invoices = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState("unpaid");
   
   const [formData, setFormData] = useState({
     student_id: "",
@@ -105,12 +126,16 @@ const Invoices = () => {
       }
       setStudents(studentsRes.data as any || []);
     } else if (role === 'student' && studentId) {
-      // Fetch student's class and class fee
+      // Fetch student's class and class fee, and profile
       const { data: studentData } = await supabase
         .from('students')
-        .select('class_id')
+        .select('class_id, profiles!students_profile_id_fkey(first_name, last_name, email)')
         .eq('id', studentId)
         .single();
+      
+      if (studentData?.profiles) {
+        setStudentProfile(studentData.profiles as any);
+      }
       
       // Fetch existing invoices
       const { data: invoicesData } = await supabase
@@ -118,6 +143,22 @@ const Invoices = () => {
         .select('*')
         .eq('student_id', studentId)
         .order('created_at', { ascending: false });
+      
+      // Fetch student articles (unpaid)
+      const { data: articlesData } = await supabase
+        .from('student_articles')
+        .select(`
+          id, article_id, amount, amount_paid, status, created_at,
+          fee_articles!student_articles_article_id_fkey (name)
+        `)
+        .eq('student_id', studentId);
+
+      if (articlesData) {
+        setStudentArticles(articlesData.map((sa: any) => ({
+          ...sa,
+          article: sa.fee_articles
+        })));
+      }
       
       let allInvoices = invoicesData || [];
       
@@ -189,12 +230,17 @@ const Invoices = () => {
       return;
     }
 
+    if (formData.amount < 0) {
+      toast({ title: "Erreur", description: "Le montant ne peut pas être négatif", variant: "destructive" });
+      return;
+    }
+
     try {
       const { error } = await supabase.from('invoices').insert({
         student_id: formData.student_id,
         invoice_number: generateInvoiceNumber(),
         description: formData.description,
-        amount: formData.amount,
+        amount: Math.max(0, formData.amount),
         due_date: formData.due_date,
         status: 'pending',
       });
@@ -262,6 +308,39 @@ const Invoices = () => {
     }).format(amount);
   };
 
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  // Filter invoices and articles for student view
+  const unpaidInvoices = invoices.filter(inv => inv.status !== 'paid');
+  const paidInvoices = invoices.filter(inv => inv.status === 'paid');
+  const unpaidArticles = studentArticles.filter(sa => sa.status !== 'paid');
+  const paidArticles = studentArticles.filter(sa => sa.status === 'paid');
+
+  // Calculate totals
+  const totalInvoiceAmount = invoices.reduce((acc, inv) => acc + inv.amount, 0);
+  const totalInvoicePaid = invoices.reduce((acc, inv) => acc + inv.amount_paid, 0);
+  const totalArticleAmount = studentArticles.reduce((acc, sa) => acc + sa.amount, 0);
+  const totalArticlePaid = studentArticles.reduce((acc, sa) => acc + sa.amount_paid, 0);
+  const totalAmount = totalInvoiceAmount + totalArticleAmount;
+  const totalPaid = totalInvoicePaid + totalArticlePaid;
+  const remainingAmount = totalAmount - totalPaid;
+  const pendingCount = unpaidInvoices.length + unpaidArticles.length;
+
+  // Admin stats
+  const adminTotalPaid = invoices.reduce((acc, inv) => acc + inv.amount_paid, 0);
+  const adminPendingCount = invoices.filter(inv => inv.status === 'pending' || inv.status === 'partial').length;
+
+  // Teacher stats
+  const teacherTotalAmount = teacherPayments.reduce((acc, p) => acc + p.amount, 0);
+  const teacherTotalPaid = teacherPayments.reduce((acc, p) => acc + p.amount_paid, 0);
+
+  // Filtered for admin view
   const filteredInvoices = invoices.filter(inv => {
     const studentName = inv.student ? `${inv.student.profile?.first_name} ${inv.student.profile?.last_name}`.toLowerCase() : '';
     const matchesSearch = studentName.includes(searchQuery.toLowerCase()) || 
@@ -270,16 +349,6 @@ const Invoices = () => {
     const matchesFilter = filterStatus === "all" || inv.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
-
-  // Stats
-  const totalAmount = invoices.reduce((acc, inv) => acc + inv.amount, 0);
-  const totalPaid = invoices.reduce((acc, inv) => acc + inv.amount_paid, 0);
-  const remainingAmount = totalAmount - totalPaid;
-  const pendingCount = invoices.filter(inv => inv.status === 'pending' || inv.status === 'partial').length;
-
-  // Teacher stats
-  const teacherTotalAmount = teacherPayments.reduce((acc, p) => acc + p.amount, 0);
-  const teacherTotalPaid = teacherPayments.reduce((acc, p) => acc + p.amount_paid, 0);
 
   if (authLoading) {
     return (
@@ -291,18 +360,24 @@ const Invoices = () => {
     );
   }
 
-  // Student view
+  // Student view - Completely redesigned
   if (role === 'student') {
     return (
       <DashboardLayout>
         <div className="space-y-6 animate-fade-in">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Mes Factures</h1>
-            <p className="text-muted-foreground mt-1">Suivi de vos paiements de scolarité</p>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
+                <Receipt className="w-7 h-7 text-primary" />
+                Mes Factures
+              </h1>
+              <p className="text-muted-foreground mt-1">Suivi complet de vos paiements</p>
+            </div>
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
               <CardContent className="p-4 flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -336,50 +411,305 @@ const Invoices = () => {
                 </div>
               </CardContent>
             </Card>
-          </div>
-
-          {/* Invoices List */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : invoices.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  <FileText className="w-8 h-8 text-muted-foreground" />
+            <Card className="bg-gradient-to-br from-destructive/10 to-destructive/5 border-destructive/20">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-destructive/20 flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6 text-destructive" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Aucune facture</h3>
-                <p className="text-muted-foreground text-center">Vous n'avez pas encore de factures.</p>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{pendingCount}</p>
+                  <p className="text-sm text-muted-foreground">Factures en attente</p>
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            <div className="space-y-4">
-              {invoices.map(inv => (
-                <Card key={inv.id}>
-                  <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-sm text-muted-foreground">{inv.invoice_number}</span>
-                          {getStatusBadge(inv.status)}
-                        </div>
-                        <p className="font-medium text-foreground">{inv.description}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Échéance: {new Date(inv.due_date).toLocaleDateString('fr-FR')}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-foreground">{formatCurrency(inv.amount)}</p>
-                        <p className="text-sm text-success">Payé: {formatCurrency(inv.amount_paid)}</p>
-                        <p className="text-sm text-warning">Reste: {formatCurrency(inv.amount - inv.amount_paid)}</p>
-                      </div>
+          </div>
+
+          {/* Tabs for invoice categories */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsTrigger value="unpaid" className="gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Impayées ({unpaidInvoices.length + unpaidArticles.length})
+              </TabsTrigger>
+              <TabsTrigger value="all" className="gap-2">
+                <FileText className="w-4 h-4" />
+                Toutes ({invoices.length + studentArticles.length})
+              </TabsTrigger>
+              <TabsTrigger value="paid" className="gap-2">
+                <CheckCircle className="w-4 h-4" />
+                Payées ({paidInvoices.length + paidArticles.length})
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Unpaid Tab */}
+            <TabsContent value="unpaid" className="space-y-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : unpaidInvoices.length === 0 && unpaidArticles.length === 0 ? (
+                <Card className="border-dashed border-success/30 bg-success/5">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mb-4">
+                      <CheckCircle className="w-8 h-8 text-success" />
                     </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Tout est payé !</h3>
+                    <p className="text-muted-foreground text-center">Vous n'avez aucune facture en attente de paiement.</p>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          )}
+              ) : (
+                <div className="space-y-4">
+                  {/* Unpaid Invoices */}
+                  {unpaidInvoices.map(inv => (
+                    <Card key={inv.id} className="border-warning/30 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">{inv.invoice_number}</span>
+                              {getStatusBadge(inv.status)}
+                              <Badge variant="outline">Facture</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{inv.description}</p>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                Échéance: {formatDate(inv.due_date)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-foreground">{formatCurrency(inv.amount)}</p>
+                            <p className="text-sm text-success">Payé: {formatCurrency(inv.amount_paid)}</p>
+                            <p className="text-sm font-medium text-warning">Reste: {formatCurrency(inv.amount - inv.amount_paid)}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {/* Unpaid Articles */}
+                  {unpaidArticles.map(sa => (
+                    <Card key={sa.id} className="border-warning/30 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">ART-{sa.id.slice(0, 8).toUpperCase()}</span>
+                              {getStatusBadge(sa.status)}
+                              <Badge variant="outline" className="bg-accent/10">Article</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{sa.article.name}</p>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                Commandé le: {formatDate(sa.created_at)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-foreground">{formatCurrency(sa.amount)}</p>
+                            <p className="text-sm text-success">Payé: {formatCurrency(sa.amount_paid)}</p>
+                            <p className="text-sm font-medium text-warning">Reste: {formatCurrency(sa.amount - sa.amount_paid)}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* All Tab */}
+            <TabsContent value="all" className="space-y-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : invoices.length === 0 && studentArticles.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                      <FileText className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Aucune facture</h3>
+                    <p className="text-muted-foreground text-center">Vous n'avez pas encore de factures.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {invoices.map(inv => (
+                    <Card key={inv.id} className={`hover:shadow-md transition-shadow ${inv.status === 'paid' ? 'border-success/30 bg-success/5' : ''}`}>
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">{inv.invoice_number}</span>
+                              {getStatusBadge(inv.status)}
+                              <Badge variant="outline">Facture</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{inv.description}</p>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                Échéance: {formatDate(inv.due_date)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-foreground">{formatCurrency(inv.amount)}</p>
+                            <p className="text-sm text-success">Payé: {formatCurrency(inv.amount_paid)}</p>
+                            {inv.status !== 'paid' && (
+                              <p className="text-sm font-medium text-warning">Reste: {formatCurrency(inv.amount - inv.amount_paid)}</p>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {studentArticles.map(sa => (
+                    <Card key={sa.id} className={`hover:shadow-md transition-shadow ${sa.status === 'paid' ? 'border-success/30 bg-success/5' : ''}`}>
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">ART-{sa.id.slice(0, 8).toUpperCase()}</span>
+                              {getStatusBadge(sa.status)}
+                              <Badge variant="outline" className="bg-accent/10">Article</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{sa.article.name}</p>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                Commandé le: {formatDate(sa.created_at)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-foreground">{formatCurrency(sa.amount)}</p>
+                            <p className="text-sm text-success">Payé: {formatCurrency(sa.amount_paid)}</p>
+                            {sa.status !== 'paid' && (
+                              <p className="text-sm font-medium text-warning">Reste: {formatCurrency(sa.amount - sa.amount_paid)}</p>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Paid Tab */}
+            <TabsContent value="paid" className="space-y-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : paidInvoices.length === 0 && paidArticles.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                      <FileText className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Aucune facture payée</h3>
+                    <p className="text-muted-foreground text-center">Vous n'avez pas encore effectué de paiements.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {paidInvoices.map(inv => (
+                    <Card key={inv.id} className="border-success/30 bg-success/5 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">{inv.invoice_number}</span>
+                              {getStatusBadge(inv.status)}
+                              <Badge variant="outline">Facture</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{inv.description}</p>
+                            
+                            {/* Detailed payment info */}
+                            <div className="bg-background/80 rounded-lg p-4 space-y-2 border">
+                              <h4 className="font-medium text-sm text-muted-foreground mb-2">Détails du paiement</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <User className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Concerné:</span>
+                                  <span className="font-medium">{studentProfile?.first_name} {studentProfile?.last_name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Hash className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">N° Facture:</span>
+                                  <span className="font-mono font-medium">{inv.invoice_number}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Date paiement:</span>
+                                  <span className="font-medium">{inv.payment_date ? formatDate(inv.payment_date) : '-'}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Date création:</span>
+                                  <span className="font-medium">{inv.created_at ? formatDate(inv.created_at) : '-'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-success">{formatCurrency(inv.amount)}</p>
+                            <p className="text-sm text-muted-foreground">Entièrement payé</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {paidArticles.map(sa => (
+                    <Card key={sa.id} className="border-success/30 bg-success/5 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm bg-muted px-2 py-1 rounded">ART-{sa.id.slice(0, 8).toUpperCase()}</span>
+                              {getStatusBadge(sa.status)}
+                              <Badge variant="outline" className="bg-accent/10">Article</Badge>
+                            </div>
+                            <p className="font-semibold text-lg text-foreground">{sa.article.name}</p>
+                            
+                            {/* Detailed payment info */}
+                            <div className="bg-background/80 rounded-lg p-4 space-y-2 border">
+                              <h4 className="font-medium text-sm text-muted-foreground mb-2">Détails du paiement</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <User className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Concerné:</span>
+                                  <span className="font-medium">{studentProfile?.first_name} {studentProfile?.last_name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Hash className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Référence:</span>
+                                  <span className="font-mono font-medium">ART-{sa.id.slice(0, 8).toUpperCase()}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">Date commande:</span>
+                                  <span className="font-medium">{formatDate(sa.created_at)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <p className="text-2xl font-bold text-success">{formatCurrency(sa.amount)}</p>
+                            <p className="text-sm text-muted-foreground">Entièrement payé</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </DashboardLayout>
     );
@@ -498,6 +828,7 @@ const Invoices = () => {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Créer une facture</DialogTitle>
+                <DialogDescription className="sr-only">Formulaire pour créer une nouvelle facture</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <div>
@@ -532,7 +863,7 @@ const Invoices = () => {
                     <Input 
                       type="number"
                       value={formData.amount}
-                      onChange={e => setFormData({ ...formData, amount: Number(e.target.value) })}
+                      onChange={e => setFormData({ ...formData, amount: Math.max(0, Number(e.target.value)) })}
                       min={0}
                     />
                   </div>
@@ -570,7 +901,7 @@ const Invoices = () => {
                 <DollarSign className="w-6 h-6 text-success" />
               </div>
               <div>
-                <p className="text-lg font-bold text-foreground">{formatCurrency(totalPaid)}</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(adminTotalPaid)}</p>
                 <p className="text-sm text-muted-foreground">Encaissé</p>
               </div>
             </CardContent>
@@ -581,7 +912,7 @@ const Invoices = () => {
                 <TrendingUp className="w-6 h-6 text-warning" />
               </div>
               <div>
-                <p className="text-lg font-bold text-foreground">{formatCurrency(totalAmount - totalPaid)}</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(totalInvoiceAmount - adminTotalPaid)}</p>
                 <p className="text-sm text-muted-foreground">Reste à encaisser</p>
               </div>
             </CardContent>
@@ -592,7 +923,7 @@ const Invoices = () => {
                 <Users className="w-6 h-6 text-accent" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{pendingCount}</p>
+                <p className="text-2xl font-bold text-foreground">{adminPendingCount}</p>
                 <p className="text-sm text-muted-foreground">En attente</p>
               </div>
             </CardContent>
@@ -703,6 +1034,7 @@ const Invoices = () => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Enregistrer un paiement</DialogTitle>
+              <DialogDescription className="sr-only">Formulaire pour enregistrer un paiement sur une facture</DialogDescription>
             </DialogHeader>
             {selectedInvoice && (
               <div className="space-y-4 mt-4">
@@ -717,7 +1049,7 @@ const Invoices = () => {
                   <Input 
                     type="number"
                     value={paymentAmount}
-                    onChange={e => setPaymentAmount(Number(e.target.value))}
+                    onChange={e => setPaymentAmount(Math.max(0, Number(e.target.value)))}
                     min={0}
                     max={selectedInvoice.amount - selectedInvoice.amount_paid}
                   />

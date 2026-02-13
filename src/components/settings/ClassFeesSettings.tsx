@@ -65,7 +65,7 @@ export const ClassFeesSettings = () => {
   }, [settings.academic_year]);
 
   const handleSave = async (classFee: ClassFee) => {
-    const amount = parseFloat(editAmount) || 0;
+    const amount = Math.max(0, parseFloat(editAmount) || 0);
     
     if (classFee.id) {
       // Update existing
@@ -136,6 +136,7 @@ export const ClassFeesSettings = () => {
                       onChange={(e) => setEditAmount(e.target.value)}
                       className="w-32"
                       placeholder="Montant"
+                      min={0}
                     />
                     <span className="text-sm text-muted-foreground">FCFA</span>
                     <Button

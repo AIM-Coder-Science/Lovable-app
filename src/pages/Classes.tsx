@@ -106,9 +106,29 @@ const Classes = () => {
     fetchClasses();
   }, []);
 
+  // Normalize class name for duplicate checking
+  const normalizeClassName = (name: string) => {
+    return name.toLowerCase().replace(/\s+/g, '').replace(/[^a-zA-Z0-9àâäéèêëïîôùûüç]/gi, '');
+  };
+
   const handleCreateClass = async () => {
     if (!formData.name || !formData.level) {
       toast({ title: "Erreur", description: "Veuillez remplir tous les champs obligatoires", variant: "destructive" });
+      return;
+    }
+
+    // Check for duplicate class name (normalized)
+    const normalizedNewName = normalizeClassName(formData.name);
+    const existingDuplicate = classes.find(c => 
+      normalizeClassName(c.name) === normalizedNewName
+    );
+    
+    if (existingDuplicate) {
+      toast({ 
+        title: "Erreur", 
+        description: `Une classe similaire existe déjà: "${existingDuplicate.name}"`, 
+        variant: "destructive" 
+      });
       return;
     }
 
@@ -121,7 +141,13 @@ const Classes = () => {
           academic_year: settings.academic_year,
         });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('unique') || error.code === '23505') {
+          toast({ title: "Erreur", description: "Une classe avec ce nom existe déjà", variant: "destructive" });
+          return;
+        }
+        throw error;
+      }
 
       toast({ title: "Succès", description: "Classe créée avec succès" });
       setIsCreateDialogOpen(false);

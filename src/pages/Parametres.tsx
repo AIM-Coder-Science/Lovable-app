@@ -9,7 +9,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Settings, User, Lock, School, Sliders, CreditCard } from "lucide-react";
+import { Settings, User, Lock, School, Sliders, CreditCard, Shield } from "lucide-react";
+import { AdminManagement } from "@/components/admin/AdminManagement";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
 import { ClassFeesSettings } from "@/components/settings/ClassFeesSettings";
 import { FeeArticlesSettings } from "@/components/settings/FeeArticlesSettings";
@@ -216,6 +217,10 @@ const Parametres = () => {
                 <TabsTrigger value="system" className="gap-2">
                   <Sliders className="w-4 h-4" />
                   Système
+                </TabsTrigger>
+                <TabsTrigger value="admins" className="gap-2">
+                  <Shield className="w-4 h-4" />
+                  Administrateurs
                 </TabsTrigger>
               </>
             )}
@@ -458,6 +463,12 @@ const Parametres = () => {
                   {loading ? "Enregistrement..." : "Enregistrer les paramètres système"}
                 </Button>
               </div>
+            </TabsContent>
+          )}
+
+          {isAdmin && (
+            <TabsContent value="admins">
+              <AdminManagement />
             </TabsContent>
           )}
         </Tabs>

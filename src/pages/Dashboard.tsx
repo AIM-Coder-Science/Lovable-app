@@ -90,62 +90,104 @@ const Dashboard = () => {
       averageGrade: 0,
     });
 
-    // Fetch recent activities (based on recent records)
+    // Fetch recent activities from multiple sources with timestamps
+    const [recentStudents, recentTeachers, recentPubs, recentGrades, recentInvoices] = await Promise.all([
+      supabase
+        .from('students')
+        .select('id, created_at, profiles!students_profile_id_fkey(first_name, last_name)')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('teachers')
+        .select('id, created_at, profiles!teachers_profile_id_fkey(first_name, last_name)')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('publications')
+        .select('id, title, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('grades')
+        .select('id, created_at, value, max_value, students(profiles!students_profile_id_fkey(first_name, last_name)), subjects(name)')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('invoices')
+        .select('id, created_at, amount, status, students(profiles!students_profile_id_fkey(first_name, last_name))')
+        .order('created_at', { ascending: false })
+        .limit(5),
+    ]);
+
     const activities: Activity[] = [];
 
-    const { data: recentStudents } = await supabase
-      .from('students')
-      .select('id, created_at, profiles!students_profile_id_fkey(first_name, last_name)')
-      .order('created_at', { ascending: false })
-      .limit(3);
-
-    recentStudents?.forEach((s: any) => {
+    // Add student activities
+    recentStudents.data?.forEach((s: any) => {
       activities.push({
         id: `student-${s.id}`,
         type: 'student',
-        message: `Nouvel apprenant: ${s.profiles?.first_name} ${s.profiles?.last_name}`,
-        time: formatTimeAgo(s.created_at),
+        message: `Nouvel apprenant: ${s.profiles?.first_name || ''} ${s.profiles?.last_name || ''}`,
+        time: s.created_at,
       });
     });
 
-    const { data: recentTeachers } = await supabase
-      .from('teachers')
-      .select('id, created_at, profiles!teachers_profile_id_fkey(first_name, last_name)')
-      .order('created_at', { ascending: false })
-      .limit(2);
-
-    recentTeachers?.forEach((t: any) => {
+    // Add teacher activities
+    recentTeachers.data?.forEach((t: any) => {
       activities.push({
         id: `teacher-${t.id}`,
         type: 'teacher',
-        message: `Nouvel enseignant: ${t.profiles?.first_name} ${t.profiles?.last_name}`,
-        time: formatTimeAgo(t.created_at),
+        message: `Nouvel enseignant: ${t.profiles?.first_name || ''} ${t.profiles?.last_name || ''}`,
+        time: t.created_at,
       });
     });
 
-    const { data: recentPubs } = await supabase
-      .from('publications')
-      .select('id, title, created_at')
-      .order('created_at', { ascending: false })
-      .limit(2);
-
-    recentPubs?.forEach((p: any) => {
+    // Add publication activities
+    recentPubs.data?.forEach((p: any) => {
       activities.push({
         id: `pub-${p.id}`,
         type: 'publication',
         message: `Publication: ${p.title}`,
-        time: formatTimeAgo(p.created_at),
+        time: p.created_at,
       });
     });
 
-    // Sort by most recent
-    activities.sort((a, b) => {
-      const timeA = parseTimeAgo(a.time);
-      const timeB = parseTimeAgo(b.time);
-      return timeA - timeB;
+    // Add grade activities
+    recentGrades.data?.forEach((g: any) => {
+      const studentName = g.students?.profiles?.first_name 
+        ? `${g.students.profiles.first_name} ${g.students.profiles.last_name}`
+        : 'Étudiant';
+      activities.push({
+        id: `grade-${g.id}`,
+        type: 'grade',
+        message: `Note ${g.value}/${g.max_value} en ${g.subjects?.name || 'N/A'} pour ${studentName}`,
+        time: g.created_at,
+      });
     });
 
-    setRecentActivities(activities.slice(0, 5));
+    // Add invoice activities  
+    recentInvoices.data?.forEach((inv: any) => {
+      const studentName = inv.students?.profiles?.first_name 
+        ? `${inv.students.profiles.first_name} ${inv.students.profiles.last_name}`
+        : 'Étudiant';
+      const statusText = inv.status === 'paid' ? 'payée' : inv.status === 'partial' ? 'paiement partiel' : 'créée';
+      activities.push({
+        id: `invoice-${inv.id}`,
+        type: 'invoice',
+        message: `Facture ${statusText}: ${inv.amount?.toLocaleString() || 0} FCFA - ${studentName}`,
+        time: inv.created_at,
+      });
+    });
+
+    // Sort by actual timestamp (most recent first)
+    activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+    // Format times for display and take top 8
+    const formattedActivities = activities.slice(0, 8).map(activity => ({
+      ...activity,
+      time: formatTimeAgo(activity.time),
+    }));
+
+    setRecentActivities(formattedActivities);
   };
 
   const fetchTeacherDashboard = async () => {

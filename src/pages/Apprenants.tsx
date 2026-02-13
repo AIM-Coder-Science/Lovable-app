@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Search, UserCheck, School, Eye, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, UserCheck, School, Eye, Pencil, Trash2, AlertTriangle } from "lucide-react";
 import { StatusToggle } from "@/components/ui/status-toggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useAuth } from "@/hooks/useAuth";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Student {
   id: string;
@@ -34,6 +36,9 @@ interface Student {
     name: string;
     level: string;
   } | null;
+  credentials?: {
+    generated_password: string;
+  } | null;
 }
 
 interface Class {
@@ -42,7 +47,16 @@ interface Class {
   level: string;
 }
 
+const isValidDate = (dateStr: string): boolean => {
+  if (!dateStr) return true;
+  const date = new Date(dateStr + 'T00:00:00');
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
+
 const Apprenants = () => {
+  const { role, teacherId } = useAuth();
+  const isAdmin = role === 'admin';
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +67,8 @@ const Apprenants = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [isSanctionDialogOpen, setIsSanctionDialogOpen] = useState(false);
+  const [sanctionData, setSanctionData] = useState({ reason: "", sanctionType: "avertissement", description: "" });
   
   const [editFormData, setEditFormData] = useState({
     firstName: "",
@@ -67,8 +83,6 @@ const Apprenants = () => {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
-    email: "",
-    matricule: "",
     birthday: "",
     parentName: "",
     parentPhone: "",
@@ -92,10 +106,29 @@ const Apprenants = () => {
       return;
     }
 
+    // Fetch credentials for all students
+    const studentUserIds = (data || []).map((s: any) => s.user_id);
+    let credentialsMap: Record<string, string> = {};
+    
+    if (studentUserIds.length > 0) {
+      const { data: credData } = await supabase
+        .from('user_credentials')
+        .select('user_id, generated_password')
+        .in('user_id', studentUserIds);
+      
+      if (credData) {
+        credentialsMap = credData.reduce((acc: Record<string, string>, c: any) => {
+          acc[c.user_id] = c.generated_password;
+          return acc;
+        }, {});
+      }
+    }
+
     const formattedData = (data || []).map((s: any) => ({
       ...s,
       profile: s.profiles,
       class: s.classes,
+      credentials: credentialsMap[s.user_id] ? { generated_password: credentialsMap[s.user_id] } : null,
     }));
 
     setStudents(formattedData);
@@ -117,8 +150,12 @@ const Apprenants = () => {
   }, []);
 
   const handleCreateStudent = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.matricule) {
+    if (!formData.firstName || !formData.lastName) {
       toast({ title: "Erreur", description: "Veuillez remplir tous les champs obligatoires", variant: "destructive" });
+      return;
+    }
+    if (formData.birthday && !isValidDate(formData.birthday)) {
+      toast({ title: "Erreur", description: "La date de naissance est invalide (ex: 30 février n'existe pas)", variant: "destructive" });
       return;
     }
 
@@ -131,11 +168,9 @@ const Apprenants = () => {
 
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
-          email: formData.email,
           firstName: formData.firstName,
           lastName: formData.lastName,
           userType: 'student',
-          matricule: formData.matricule,
           classId: formData.classId || null,
           birthday: formData.birthday || null,
           parentName: formData.parentName || null,
@@ -148,7 +183,8 @@ const Apprenants = () => {
 
       toast({ 
         title: "Apprenant créé", 
-        description: `Mot de passe généré: ${data.generatedPassword}. Notez-le car il ne sera plus affiché.`,
+        description: `Email: ${data.email} | Matricule: ${data.matricule} | Mot de passe: ${data.generatedPassword}`,
+        duration: 15000,
       });
       setIsCreateDialogOpen(false);
       resetForm();
@@ -220,6 +256,10 @@ const Apprenants = () => {
 
   const handleEditStudent = async () => {
     if (!selectedStudent) return;
+    if (editFormData.birthday && !isValidDate(editFormData.birthday)) {
+      toast({ title: "Erreur", description: "La date de naissance est invalide", variant: "destructive" });
+      return;
+    }
 
     try {
       // Update profile
@@ -269,13 +309,39 @@ const Apprenants = () => {
     setFormData({
       firstName: "",
       lastName: "",
-      email: "",
-      matricule: "",
       birthday: "",
       parentName: "",
       parentPhone: "",
       classId: "",
     });
+  };
+
+  const handleCreateSanction = async () => {
+    if (!selectedStudent || !sanctionData.reason || !teacherId) {
+      toast({ title: "Erreur", description: "Veuillez renseigner le motif", variant: "destructive" });
+      return;
+    }
+    if (!selectedStudent.class_id) {
+      toast({ title: "Erreur", description: "L'apprenant n'a pas de classe assignée", variant: "destructive" });
+      return;
+    }
+    try {
+      const { error } = await supabase.from('sanctions' as any).insert({
+        student_id: selectedStudent.id,
+        teacher_id: teacherId,
+        class_id: selectedStudent.class_id,
+        reason: sanctionData.reason,
+        sanction_type: sanctionData.sanctionType,
+        description: sanctionData.description || null,
+      });
+      if (error) throw error;
+      toast({ title: "Succès", description: "Sanction enregistrée et notifications envoyées" });
+      setIsSanctionDialogOpen(false);
+      setSanctionData({ reason: "", sanctionType: "avertissement", description: "" });
+      setSelectedStudent(null);
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
   };
 
   const filteredStudents = students.filter(student => {
@@ -295,7 +361,7 @@ const Apprenants = () => {
             <h1 className="text-3xl font-bold text-foreground">Apprenants</h1>
             <p className="text-muted-foreground">Gérez les apprenants de l'établissement</p>
           </div>
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          {isAdmin && <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="w-4 h-4" />
@@ -323,21 +389,13 @@ const Apprenants = () => {
                     />
                   </div>
                 </div>
-                <div>
-                  <Label>Email *</Label>
-                  <Input 
-                    type="email" 
-                    value={formData.email} 
-                    onChange={e => setFormData({...formData, email: e.target.value})} 
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Un mot de passe sera généré automatiquement</p>
-                </div>
-                <div>
-                  <Label>Matricule *</Label>
-                  <Input 
-                    value={formData.matricule} 
-                    onChange={e => setFormData({...formData, matricule: e.target.value})} 
-                  />
+                <div className="bg-muted/50 rounded-lg p-3 border border-dashed">
+                  <p className="text-sm text-muted-foreground">
+                    📧 L'email et le matricule seront générés automatiquement.
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    🔑 Un mot de passe sera généré automatiquement et affiché après création.
+                  </p>
                 </div>
                 <div>
                   <Label>Date de naissance</Label>
@@ -377,7 +435,7 @@ const Apprenants = () => {
                 <Button onClick={handleCreateStudent} className="w-full">Créer</Button>
               </div>
             </DialogContent>
-          </Dialog>
+          </Dialog>}
         </div>
 
         {/* Filters */}
@@ -468,58 +526,43 @@ const Apprenants = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedStudent(student);
-                              setIsViewDialogOpen(true);
-                            }}
-                            title="Voir"
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => { setSelectedStudent(student); setIsViewDialogOpen(true); }} title="Voir">
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(student)}
-                            title="Modifier"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedStudent(student);
-                              setFormData(prev => ({ ...prev, classId: student.class_id || "" }));
-                              setIsAssignDialogOpen(true);
-                            }}
-                            title="Changer de classe"
-                          >
-                            <School className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" title="Supprimer">
-                                <Trash2 className="w-4 h-4 text-destructive" />
+                          {isAdmin && (
+                            <>
+                              <Button variant="ghost" size="icon" onClick={() => openEditDialog(student)} title="Modifier">
+                                <Pencil className="w-4 h-4" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Supprimer l'apprenant</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Êtes-vous sûr de vouloir supprimer {student.profile.first_name} {student.profile.last_name} ? Cette action est irréversible et supprimera toutes ses notes et bulletins.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Annuler</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteStudent(student)}>
-                                  Supprimer
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                              <Button variant="ghost" size="icon" onClick={() => { setSelectedStudent(student); setFormData(prev => ({ ...prev, classId: student.class_id || "" })); setIsAssignDialogOpen(true); }} title="Changer de classe">
+                                <School className="w-4 h-4" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" title="Supprimer">
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Supprimer l'apprenant</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Êtes-vous sûr de vouloir supprimer {student.profile.first_name} {student.profile.last_name} ?
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteStudent(student)}>Supprimer</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </>
+                          )}
+                          {!isAdmin && student.class_id && (
+                            <Button variant="ghost" size="icon" onClick={() => { setSelectedStudent(student); setIsSanctionDialogOpen(true); }} title="Sanctionner">
+                              <AlertTriangle className="w-4 h-4 text-orange-500" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -576,14 +619,24 @@ const Apprenants = () => {
                     <p className="font-medium">{selectedStudent.profile.last_name}</p>
                   </div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Email</Label>
-                  <p className="font-medium">{selectedStudent.profile.email}</p>
-                </div>
+                {isAdmin && (
+                  <div>
+                    <Label className="text-muted-foreground">Email</Label>
+                    <p className="font-medium font-mono text-sm bg-muted px-2 py-1 rounded">{selectedStudent.profile.email}</p>
+                  </div>
+                )}
                 <div>
                   <Label className="text-muted-foreground">Matricule</Label>
-                  <p className="font-medium">{selectedStudent.matricule}</p>
+                  <p className="font-medium font-mono text-lg">{selectedStudent.matricule}</p>
                 </div>
+                {isAdmin && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                    <Label className="text-muted-foreground">Mot de passe initial</Label>
+                    <p className="font-medium font-mono text-sm bg-muted px-2 py-1 rounded">
+                      {selectedStudent.credentials?.generated_password || "Non disponible"}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <Label className="text-muted-foreground">Date de naissance</Label>
                   <p className="font-medium">{selectedStudent.birthday || "Non renseignée"}</p>
@@ -597,12 +650,14 @@ const Apprenants = () => {
                   <p className="font-medium">{selectedStudent.parent_name || "Non renseigné"}</p>
                   <p className="text-sm text-muted-foreground">{selectedStudent.parent_phone || ""}</p>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Statut</Label>
-                  <Badge variant={selectedStudent.is_active ? "default" : "secondary"} className="mt-1">
-                    {selectedStudent.is_active ? "Actif" : "Inactif"}
-                  </Badge>
-                </div>
+                {isAdmin && (
+                  <div>
+                    <Label className="text-muted-foreground">Statut</Label>
+                    <Badge variant={selectedStudent.is_active ? "default" : "secondary"} className="mt-1">
+                      {selectedStudent.is_active ? "Actif" : "Inactif"}
+                    </Badge>
+                  </div>
+                )}
               </div>
             )}
           </DialogContent>
@@ -668,6 +723,51 @@ const Apprenants = () => {
                 />
               </div>
               <Button onClick={handleEditStudent} className="w-full">Enregistrer</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        {/* Sanction Dialog */}
+        <Dialog open={isSanctionDialogOpen} onOpenChange={setIsSanctionDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Sanctionner {selectedStudent?.profile.first_name} {selectedStudent?.profile.last_name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div>
+                <Label>Type de sanction</Label>
+                <Select value={sanctionData.sanctionType} onValueChange={v => setSanctionData({ ...sanctionData, sanctionType: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="avertissement">Avertissement</SelectItem>
+                    <SelectItem value="blame">Blâme</SelectItem>
+                    <SelectItem value="exclusion_temporaire">Exclusion temporaire</SelectItem>
+                    <SelectItem value="retenue">Retenue</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Motif *</Label>
+                <Input
+                  value={sanctionData.reason}
+                  onChange={e => setSanctionData({ ...sanctionData, reason: e.target.value })}
+                  placeholder="Motif de la sanction"
+                />
+              </div>
+              <div>
+                <Label>Description complémentaire</Label>
+                <Textarea
+                  value={sanctionData.description}
+                  onChange={e => setSanctionData({ ...sanctionData, description: e.target.value })}
+                  placeholder="Détails supplémentaires..."
+                  rows={3}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ⚠️ Le professeur principal et l'administration seront automatiquement notifiés.
+              </p>
+              <Button onClick={handleCreateSanction} className="w-full">Enregistrer la sanction</Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -120,14 +120,18 @@ const Appreciations = () => {
 
     const selectedClass = principalClasses.find(pc => pc.class_id === selectedClassId);
 
-    // Fetch level-specific coefficients
+    // Fetch coefficients (level-based and class-specific)
     const { data: levelCoeffs } = await supabase
       .from('subject_level_coefficients')
-      .select('*')
-      .eq('level', selectedClass?.class_level || '');
+      .select('*');
 
     const coeffMap = new Map<string, number>();
-    levelCoeffs?.forEach((lc: any) => {
+    // Level-based defaults
+    levelCoeffs?.filter((lc: any) => !lc.class_id && lc.level === (selectedClass?.class_level || '')).forEach((lc: any) => {
+      coeffMap.set(lc.subject_id, lc.coefficient);
+    });
+    // Class-specific overrides
+    levelCoeffs?.filter((lc: any) => lc.class_id === selectedClassId).forEach((lc: any) => {
       coeffMap.set(lc.subject_id, lc.coefficient);
     });
 
@@ -189,7 +193,10 @@ const Appreciations = () => {
       let weightedTotal = 0;
       let totalCoefficient = 0;
 
-      const subjectGrades: SubjectGrade[] = subjects.map(subject => {
+      const subjectGrades: SubjectGrade[] = subjects.filter(subject => {
+        const coeff = coeffMap.get(subject.id) ?? subject.coefficient;
+        return coeff > 0;
+      }).map(subject => {
         const gradeData = subjectGradesMap.get(subject.id);
         const levelCoeff = coeffMap.get(subject.id) ?? subject.coefficient;
         const average = gradeData && gradeData.count > 0 

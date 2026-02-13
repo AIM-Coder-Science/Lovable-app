@@ -25,13 +25,19 @@ interface LevelCoefficient {
   subject_id: string;
   level: string;
   coefficient: number;
+  class_id: string | null;
 }
 
-const CLASS_LEVELS = ["6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Terminale"];
+interface ClassItem {
+  id: string;
+  name: string;
+  level: string;
+}
 
 const Matieres = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [levelCoefficients, setLevelCoefficients] = useState<LevelCoefficient[]>([]);
+  const [allClasses, setAllClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -68,9 +74,20 @@ const Matieres = () => {
     setLevelCoefficients(data || []);
   };
 
+  const fetchClasses = async () => {
+    const { data } = await supabase
+      .from('classes')
+      .select('id, name, level')
+      .eq('is_active', true)
+      .order('level')
+      .order('name');
+    if (data) setAllClasses(data);
+  };
+
   useEffect(() => {
     fetchSubjects();
     fetchLevelCoefficients();
+    fetchClasses();
   }, []);
 
   const handleCreateSubject = async () => {
@@ -91,14 +108,16 @@ const Matieres = () => {
 
       if (error) throw error;
 
-      // Create default coefficients for all levels
-      const levelCoeffs = CLASS_LEVELS.map(level => ({
-        subject_id: newSubject.id,
-        level,
-        coefficient: parseInt(formData.coefficient) || 1,
-      }));
-
-      await supabase.from('subject_level_coefficients').insert(levelCoeffs);
+      // Create default coefficients for all classes
+      if (allClasses.length > 0) {
+        const classCoeffs = allClasses.map(cls => ({
+          subject_id: newSubject.id,
+          level: cls.level,
+          class_id: cls.id,
+          coefficient: parseInt(formData.coefficient) || 1,
+        }));
+        await supabase.from('subject_level_coefficients').insert(classCoeffs);
+      }
 
       toast({ title: "Succès", description: "Matière créée avec succès" });
       setIsCreateDialogOpen(false);
@@ -174,12 +193,11 @@ const Matieres = () => {
 
   const openCoefficientsDialog = (subject: Subject) => {
     setSelectedSubject(subject);
-    // Load existing coefficients for this subject
-    const subjectCoeffs = levelCoefficients.filter(c => c.subject_id === subject.id);
+    const subjectCoeffs = levelCoefficients.filter(c => c.subject_id === subject.id && c.class_id);
     const coeffData: Record<string, string> = {};
-    CLASS_LEVELS.forEach(level => {
-      const existing = subjectCoeffs.find(c => c.level === level);
-      coeffData[level] = existing ? existing.coefficient.toString() : subject.coefficient.toString();
+    allClasses.forEach(cls => {
+      const existing = subjectCoeffs.find(c => c.class_id === cls.id);
+      coeffData[cls.id] = existing ? existing.coefficient.toString() : subject.coefficient.toString();
     });
     setCoeffFormData(coeffData);
     setIsCoeffDialogOpen(true);
@@ -189,17 +207,19 @@ const Matieres = () => {
     if (!selectedSubject) return;
 
     try {
-      // Delete existing coefficients for this subject
+      // Delete existing class-based coefficients for this subject
       await supabase
         .from('subject_level_coefficients')
         .delete()
-        .eq('subject_id', selectedSubject.id);
+        .eq('subject_id', selectedSubject.id)
+        .not('class_id', 'is', null);
 
-      // Insert new coefficients
-      const newCoeffs = CLASS_LEVELS.map(level => ({
+      // Insert new class-based coefficients
+      const newCoeffs = allClasses.map(cls => ({
         subject_id: selectedSubject.id,
-        level,
-        coefficient: parseInt(coeffFormData[level]) || 1,
+        level: cls.level,
+        class_id: cls.id,
+        coefficient: parseInt(coeffFormData[cls.id]) || 0,
       }));
 
       const { error } = await supabase
@@ -218,9 +238,14 @@ const Matieres = () => {
   };
 
   const getCoefficientsDisplay = (subjectId: string) => {
-    const coeffs = levelCoefficients.filter(c => c.subject_id === subjectId);
+    const coeffs = levelCoefficients.filter(c => c.subject_id === subjectId && c.class_id);
     if (coeffs.length === 0) return null;
-    return coeffs.slice(0, 3).map(c => `${c.level}: x${c.coefficient}`).join(', ') + (coeffs.length > 3 ? '...' : '');
+    const active = coeffs.filter(c => c.coefficient > 0);
+    if (active.length === 0) return 'Aucune classe';
+    return active.slice(0, 3).map(c => {
+      const cls = allClasses.find(cl => cl.id === c.class_id);
+      return cls ? `${cls.name}: x${c.coefficient}` : '';
+    }).filter(Boolean).join(', ') + (active.length > 3 ? '...' : '');
   };
 
   const filteredSubjects = subjects.filter(subject =>
@@ -293,8 +318,7 @@ const Matieres = () => {
               <TableHeader>
                 <TableRow className="table-header">
                   <TableHead>Matière</TableHead>
-                  <TableHead>Coeff. par défaut</TableHead>
-                  <TableHead>Coefficients par niveau</TableHead>
+                  <TableHead>Coefficients par classe</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -302,13 +326,13 @@ const Matieres = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       Chargement...
                     </TableCell>
                   </TableRow>
                 ) : filteredSubjects.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       Aucune matière trouvée
                     </TableCell>
                   </TableRow>
@@ -316,9 +340,6 @@ const Matieres = () => {
                   filteredSubjects.map(subject => (
                     <TableRow key={subject.id}>
                       <TableCell className="font-medium">{subject.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">x{subject.coefficient}</Badge>
-                      </TableCell>
                       <TableCell>
                         <p className="text-sm text-muted-foreground">
                           {getCoefficientsDisplay(subject.id) || 'Non définis'}
@@ -412,30 +433,48 @@ const Matieres = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Coefficients by Level Dialog */}
+        {/* Coefficients by Class Dialog */}
         <Dialog open={isCoeffDialogOpen} onOpenChange={setIsCoeffDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Coefficients par niveau - {selectedSubject?.name}</DialogTitle>
+              <DialogTitle>Coefficients par classe - {selectedSubject?.name}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <p className="text-sm text-muted-foreground">
-                Définissez le coefficient de cette matière pour chaque niveau de classe
+                Coefficient 0 = la matière n'existe pas dans cette classe
               </p>
-              <div className="space-y-3">
-                {CLASS_LEVELS.map(level => (
-                  <div key={level} className="flex items-center justify-between gap-4">
-                    <Label className="font-medium">{level}</Label>
-                    <Input 
-                      type="number"
-                      min="1"
-                      max="10"
-                      className="w-24"
-                      value={coeffFormData[level] || "1"} 
-                      onChange={e => setCoeffFormData({...coeffFormData, [level]: e.target.value})}
-                    />
+              <div className="space-y-4">
+                {Object.entries(
+                  allClasses.reduce((groups: Record<string, ClassItem[]>, cls) => {
+                    if (!groups[cls.level]) groups[cls.level] = [];
+                    groups[cls.level].push(cls);
+                    return groups;
+                  }, {})
+                ).map(([level, levelClasses]) => (
+                  <div key={level} className="border rounded-lg p-3">
+                    <p className="text-sm font-semibold text-primary mb-2">{level}</p>
+                    <div className="space-y-2">
+                      {levelClasses.map(cls => (
+                        <div key={cls.id} className="flex items-center justify-between gap-4 ml-2">
+                          <Label className="text-sm">{cls.name}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="10"
+                            className="w-24"
+                            value={coeffFormData[cls.id] || "0"}
+                            onChange={e => setCoeffFormData({...coeffFormData, [cls.id]: e.target.value})}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
+                {allClasses.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Aucune classe active. Créez des classes d'abord.
+                  </p>
+                )}
               </div>
               <Button onClick={handleSaveCoefficients} className="w-full">Enregistrer</Button>
             </div>

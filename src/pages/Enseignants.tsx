@@ -29,6 +29,9 @@ interface Teacher {
   };
   specialties: { subject_id: string; subject_name: string }[];
   classes: { class_id: string; class_name: string; subject_id: string; subject_name: string; is_principal: boolean }[];
+  credentials?: {
+    generated_password: string;
+  } | null;
 }
 
 interface Subject {
@@ -48,6 +51,9 @@ const Enseignants = () => {
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterClass, setFilterClass] = useState("all");
+  const [filterLevel, setFilterLevel] = useState("all");
+  const [filterSpecialty, setFilterSpecialty] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -65,9 +71,7 @@ const Enseignants = () => {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
-    email: "",
     phone: "",
-    employeeId: "",
   });
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
   
@@ -93,6 +97,24 @@ const Enseignants = () => {
       toast({ title: "Erreur", description: "Impossible de charger les enseignants", variant: "destructive" });
       setLoading(false);
       return;
+    }
+
+    // Fetch credentials for all teachers
+    const teacherUserIds = (teachersData || []).map((t: any) => t.user_id);
+    let credentialsMap: Record<string, string> = {};
+    
+    if (teacherUserIds.length > 0) {
+      const { data: credData } = await supabase
+        .from('user_credentials')
+        .select('user_id, generated_password')
+        .in('user_id', teacherUserIds);
+      
+      if (credData) {
+        credentialsMap = credData.reduce((acc: Record<string, string>, c: any) => {
+          acc[c.user_id] = c.generated_password;
+          return acc;
+        }, {});
+      }
     }
 
     // Fetch specialties and classes for each teacher
@@ -122,6 +144,7 @@ const Enseignants = () => {
             subject_name: c.subjects?.name || '',
             is_principal: c.is_principal,
           })),
+          credentials: credentialsMap[teacher.user_id] ? { generated_password: credentialsMap[teacher.user_id] } : null,
         };
       })
     );
@@ -167,7 +190,7 @@ const Enseignants = () => {
   }, [assignmentData.classId]);
 
   const handleCreateTeacher = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email) {
+    if (!formData.firstName || !formData.lastName) {
       toast({ title: "Erreur", description: "Veuillez remplir tous les champs obligatoires", variant: "destructive" });
       return;
     }
@@ -181,12 +204,10 @@ const Enseignants = () => {
 
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
-          email: formData.email,
           firstName: formData.firstName,
           lastName: formData.lastName,
           phone: formData.phone || null,
           userType: 'teacher',
-          employeeId: formData.employeeId || null,
           specialties: selectedSpecialties,
         },
       });
@@ -196,7 +217,8 @@ const Enseignants = () => {
 
       toast({ 
         title: "Enseignant créé", 
-        description: `Mot de passe généré: ${data.generatedPassword}. Notez-le car il ne sera plus affiché.`,
+        description: `Email: ${data.email} | Matricule: ${data.matricule} | Mot de passe: ${data.generatedPassword}`,
+        duration: 15000,
       });
       setIsCreateDialogOpen(false);
       resetForm();
@@ -360,15 +382,23 @@ const Enseignants = () => {
   };
 
   const resetForm = () => {
-    setFormData({ firstName: "", lastName: "", email: "", phone: "", employeeId: "" });
+    setFormData({ firstName: "", lastName: "", phone: "" });
     setSelectedSpecialties([]);
   };
 
-  const filteredTeachers = teachers.filter(teacher =>
-    `${teacher.profile.first_name} ${teacher.profile.last_name} ${teacher.profile.email}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+  const uniqueLevels = [...new Set(classes.map(c => c.level))];
+
+  const filteredTeachers = teachers.filter(teacher => {
+    const matchesSearch = `${teacher.profile.first_name} ${teacher.profile.last_name} ${teacher.profile.email}`
+      .toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesClass = filterClass === "all" || teacher.classes.some(c => c.class_id === filterClass);
+    const matchesLevel = filterLevel === "all" || teacher.classes.some(c => {
+      const cls = classes.find(cl => cl.id === c.class_id);
+      return cls?.level === filterLevel;
+    });
+    const matchesSpecialty = filterSpecialty === "all" || teacher.specialties.some(s => s.subject_id === filterSpecialty);
+    return matchesSearch && matchesClass && matchesLevel && matchesSpecialty;
+  });
 
   return (
     <DashboardLayout>
@@ -407,27 +437,19 @@ const Enseignants = () => {
                     />
                   </div>
                 </div>
-                <div>
-                  <Label>Email *</Label>
-                  <Input 
-                    type="email" 
-                    value={formData.email} 
-                    onChange={e => setFormData({...formData, email: e.target.value})} 
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Un mot de passe sera généré automatiquement</p>
+                <div className="bg-muted/50 rounded-lg p-3 border border-dashed">
+                  <p className="text-sm text-muted-foreground">
+                    📧 L'email et le matricule seront générés automatiquement.
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    🔑 Un mot de passe sera généré automatiquement et affiché après création.
+                  </p>
                 </div>
                 <div>
                   <Label>Téléphone</Label>
                   <Input 
                     value={formData.phone} 
                     onChange={e => setFormData({...formData, phone: e.target.value})} 
-                  />
-                </div>
-                <div>
-                  <Label>Matricule employé</Label>
-                  <Input 
-                    value={formData.employeeId} 
-                    onChange={e => setFormData({...formData, employeeId: e.target.value})} 
                   />
                 </div>
                 <div>
@@ -460,15 +482,50 @@ const Enseignants = () => {
           </Dialog>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Rechercher un enseignant..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher un enseignant..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={filterClass} onValueChange={setFilterClass}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Filtrer par classe" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les classes</SelectItem>
+              {classes.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterLevel} onValueChange={setFilterLevel}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Par niveau" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les niveaux</SelectItem>
+              {uniqueLevels.map(l => (
+                <SelectItem key={l} value={l}>{l}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterSpecialty} onValueChange={setFilterSpecialty}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Par spécialité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les spécialités</SelectItem>
+              {subjects.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Table */}
@@ -634,17 +691,17 @@ const Enseignants = () => {
                     <SelectValue placeholder="Sélectionner une matière" />
                   </SelectTrigger>
                   <SelectContent>
-                    {subjects.length > 0 ? (
-                      subjects.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    {selectedTeacher && selectedTeacher.specialties.length > 0 ? (
+                      selectedTeacher.specialties.map(s => (
+                        <SelectItem key={s.subject_id} value={s.subject_id}>{s.subject_name}</SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="none" disabled>Aucune matière disponible</SelectItem>
+                      <SelectItem value="none" disabled>Aucune spécialité définie</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Spécialités de l'enseignant: {selectedTeacher?.specialties.map(s => s.subject_name).join(', ') || 'Aucune'}
+                  Seules les matières correspondant aux spécialités de l'enseignant sont listées
                 </p>
               </div>
               {classHasPP ? (
@@ -686,15 +743,28 @@ const Enseignants = () => {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Email</Label>
-                  <p className="font-medium">{selectedTeacher.profile.email}</p>
+                  <p className="font-medium font-mono text-sm bg-muted px-2 py-1 rounded">{selectedTeacher.profile.email}</p>
+                </div>
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-3">
+                  <div>
+                    <Label className="text-muted-foreground">Matricule employé</Label>
+                    <p className="font-medium font-mono text-lg">{selectedTeacher.employee_id || "Non renseigné"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Mot de passe initial</Label>
+                    <p className="font-medium font-mono text-sm bg-muted px-2 py-1 rounded">
+                      {selectedTeacher.credentials?.generated_password || "Non disponible"}
+                    </p>
+                    {!selectedTeacher.credentials?.generated_password && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Le mot de passe n'est plus accessible car l'utilisateur peut l'avoir changé.
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Téléphone</Label>
                   <p className="font-medium">{selectedTeacher.profile.phone || "Non renseigné"}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Matricule</Label>
-                  <p className="font-medium">{selectedTeacher.employee_id || "Non renseigné"}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Spécialités</Label>

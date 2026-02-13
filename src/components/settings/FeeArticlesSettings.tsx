@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useSchoolSettings } from "@/hooks/useSchoolSettings";
@@ -54,14 +54,15 @@ export const FeeArticlesSettings = () => {
   }, [settings.academic_year]);
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.price) {
-      toast({ title: "Erreur", description: "Veuillez remplir les champs obligatoires", variant: "destructive" });
+    const parsedPrice = parseFloat(formData.price);
+    if (!formData.name || !formData.price || isNaN(parsedPrice) || parsedPrice < 0) {
+      toast({ title: "Erreur", description: "Veuillez remplir les champs obligatoires avec des valeurs valides (montant >= 0)", variant: "destructive" });
       return;
     }
 
     const articleData = {
       name: formData.name,
-      price: parseFloat(formData.price),
+      price: Math.max(0, parsedPrice),
       description: formData.description || null,
       is_required: formData.is_required,
       target_group: formData.target_group,
@@ -185,6 +186,9 @@ export const FeeArticlesSettings = () => {
                 <DialogTitle>
                   {editingArticle ? "Modifier l'article" : "Nouvel article"}
                 </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Formulaire pour {editingArticle ? "modifier un" : "créer un nouvel"} article
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-4">
                 <div>
@@ -202,6 +206,7 @@ export const FeeArticlesSettings = () => {
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     placeholder="10000"
+                    min={0}
                   />
                 </div>
                 <div>

@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { FileText, CheckCircle, Eye, Download } from "lucide-react";
+import { FileText, CheckCircle, Eye, Download, Printer } from "lucide-react";
+import { printBulletin } from "@/utils/bulletinPdf";
 
 interface BulletinData {
   id: string;
@@ -34,6 +35,7 @@ interface BulletinData {
 interface Class {
   id: string;
   name: string;
+  level?: string;
 }
 
 const PERIODS = ["Trimestre 1", "Trimestre 2", "Trimestre 3"];
@@ -48,11 +50,14 @@ const BulletinsPage = () => {
   const [selectedBulletin, setSelectedBulletin] = useState<BulletinData | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [principalAppreciation, setPrincipalAppreciation] = useState("");
+  const [schoolSettings, setSchoolSettings] = useState<{ school_name: string; academic_year: string }>({ school_name: '', academic_year: '' });
+  const [studentHasUnpaidFees, setStudentHasUnpaidFees] = useState(false);
+  const [checkingFees, setCheckingFees] = useState(false);
 
   const fetchClasses = async () => {
     const { data } = await supabase
       .from('classes')
-      .select('id, name')
+      .select('id, name, level')
       .eq('is_active', true)
       .order('name');
     if (data) setClasses(data);
@@ -102,42 +107,72 @@ const BulletinsPage = () => {
       .select('id, name, coefficient')
       .eq('is_active', true);
 
+    // Fetch level coefficients for class-specific coefficients
+    const { data: levelCoeffs } = await supabase
+      .from('subject_level_coefficients')
+      .select('*');
+
     // Process bulletins
     const processedBulletins: BulletinData[] = await Promise.all(
       (data || []).map(async (b: any) => {
-        // Get grades for this student
+        const bulletinClassId = b.class_id || selectedClassId;
+        
+        // Get class level for coefficient resolution
+        const bulletinClass = classes.find(c => c.id === bulletinClassId);
+        
+        // Build coefficient map for this class
+        const coeffMap = new Map<string, number>();
+        // Level-based defaults
+        if (bulletinClass) {
+          levelCoeffs?.filter((lc: any) => !lc.class_id).forEach((lc: any) => {
+            coeffMap.set(lc.subject_id, lc.coefficient);
+          });
+        }
+        // Class-specific overrides
+        levelCoeffs?.filter((lc: any) => lc.class_id === bulletinClassId).forEach((lc: any) => {
+          coeffMap.set(lc.subject_id, lc.coefficient);
+        });
+
+        // Get grades for this student in their class
         const { data: grades } = await supabase
           .from('grades')
           .select('subject_id, value, max_value, coefficient')
           .eq('student_id', b.student_id)
+          .eq('class_id', bulletinClassId)
           .eq('period', selectedPeriod);
 
         // Calculate subject averages
-        const subjectGrades = (subjects || []).map(subject => {
-          const studentGrades = (grades || []).filter(g => g.subject_id === subject.id);
+        const subjectGrades = (subjects || [])
+          .filter(subject => {
+            const coeff = coeffMap.get(subject.id) ?? subject.coefficient;
+            return coeff > 0;
+          })
+          .map(subject => {
+            const studentGrades = (grades || []).filter(g => g.subject_id === subject.id);
+            const coeff = coeffMap.get(subject.id) ?? subject.coefficient;
           
-          if (studentGrades.length === 0) {
+            if (studentGrades.length === 0) {
+              return {
+                subject_name: subject.name,
+                coefficient: coeff,
+                average: null,
+              };
+            }
+
+            let total = 0;
+            let count = 0;
+            studentGrades.forEach(g => {
+              const normalized = (g.value / g.max_value) * 20;
+              total += normalized;
+              count += 1;
+            });
+
             return {
               subject_name: subject.name,
-              coefficient: subject.coefficient,
-              average: null,
+              coefficient: coeff,
+              average: count > 0 ? total / count : null,
             };
-          }
-
-          let total = 0;
-          let coeff = 0;
-          studentGrades.forEach(g => {
-            const normalized = (g.value / g.max_value) * 20;
-            total += normalized * g.coefficient;
-            coeff += g.coefficient;
           });
-
-          return {
-            subject_name: subject.name,
-            coefficient: subject.coefficient,
-            average: coeff > 0 ? total / coeff : null,
-          };
-        });
 
         return {
           id: b.id,
@@ -159,15 +194,68 @@ const BulletinsPage = () => {
     setLoading(false);
   };
 
+  // Check if student has fully paid all fees
+  const checkStudentFees = async () => {
+    if (role !== 'student' || !studentId) return;
+    setCheckingFees(true);
+
+    // Check invoices
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('amount, amount_paid, status')
+      .eq('student_id', studentId);
+
+    const hasUnpaidInvoices = (invoices || []).some(inv => inv.status !== 'paid');
+
+    // Check student articles
+    const { data: articles } = await supabase
+      .from('student_articles')
+      .select('amount, amount_paid, status')
+      .eq('student_id', studentId);
+
+    const hasUnpaidArticles = (articles || []).some(a => a.status !== 'paid');
+
+    // Check class fees (tuition)
+    const { data: studentData } = await supabase
+      .from('students')
+      .select('class_id')
+      .eq('id', studentId)
+      .maybeSingle();
+
+    let hasUnpaidTuition = false;
+    if (studentData?.class_id) {
+      const { data: classFee } = await supabase
+        .from('class_fees')
+        .select('amount')
+        .eq('class_id', studentData.class_id)
+        .maybeSingle();
+
+      if (classFee && classFee.amount > 0) {
+        // Check if there's a paid tuition invoice
+        const tuitionPaid = (invoices || []).some(
+          inv => (inv.status === 'paid') && inv.amount >= classFee.amount
+        );
+        if (!tuitionPaid) hasUnpaidTuition = true;
+      }
+    }
+
+    setStudentHasUnpaidFees(hasUnpaidInvoices || hasUnpaidArticles || hasUnpaidTuition);
+    setCheckingFees(false);
+  };
+
   useEffect(() => {
     if (role === 'admin') {
       fetchClasses();
     }
+    supabase.from('school_settings').select('school_name, academic_year').maybeSingle().then(({ data }) => {
+      if (data) setSchoolSettings(data);
+    });
   }, [role]);
 
   useEffect(() => {
     if (!authLoading) {
       fetchBulletins();
+      checkStudentFees();
     }
   }, [selectedClassId, selectedPeriod, authLoading, role, studentId]);
 
@@ -209,6 +297,25 @@ const BulletinsPage = () => {
     }
   };
 
+  const handlePrintBulletin = (bulletin: BulletinData) => {
+    const selectedClass = classes.find(c => c.id === selectedClassId);
+    printBulletin({
+      schoolName: schoolSettings.school_name || 'École',
+      academicYear: schoolSettings.academic_year || '',
+      period: selectedPeriod,
+      studentName: bulletin.student_name,
+      studentMatricule: bulletin.student_matricule,
+      className: selectedClass?.name || '',
+      average: bulletin.average,
+      rank: bulletin.rank,
+      totalStudents: bulletin.total_students,
+      teacherAppreciation: bulletin.teacher_appreciation,
+      principalAppreciation: bulletin.principal_appreciation,
+      adminSigned: bulletin.admin_signature,
+      subjectGrades: bulletin.subjectGrades,
+    });
+  };
+
   const getGradeClass = (value: number) => {
     if (value >= 16) return "grade-excellent";
     if (value >= 14) return "grade-good";
@@ -221,6 +328,34 @@ const BulletinsPage = () => {
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
           <p className="text-muted-foreground">Chargement...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (role === 'student' && (checkingFees || studentHasUnpaidFees)) {
+    if (checkingFees) {
+      return (
+        <DashboardLayout>
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground">Vérification des paiements...</p>
+          </div>
+        </DashboardLayout>
+      );
+    }
+    return (
+      <DashboardLayout>
+        <div className="flex flex-col items-center justify-center h-[60vh] space-y-4 animate-fade-in">
+          <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+            <FileText className="w-10 h-10 text-destructive" />
+          </div>
+          <h2 className="text-2xl font-bold text-foreground">Accès aux bulletins restreint</h2>
+          <p className="text-muted-foreground text-center max-w-md">
+            Vous devez avoir soldé l'intégralité de vos frais de scolarité et articles avant de pouvoir consulter ou imprimer vos bulletins.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Veuillez vous rendre dans la section <strong>Facturation</strong> pour effectuer vos paiements.
+          </p>
         </div>
       </DashboardLayout>
     );
@@ -356,6 +491,14 @@ const BulletinsPage = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handlePrintBulletin(bulletin)}
+                            title="Imprimer le bulletin"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </Button>
                           {role === 'admin' && !bulletin.admin_signature && (
                             <Button
                               variant="ghost"
@@ -379,8 +522,13 @@ const BulletinsPage = () => {
         {/* View Bulletin Dialog */}
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
+            <DialogHeader className="flex flex-row items-center justify-between">
               <DialogTitle>Bulletin de {selectedBulletin?.student_name}</DialogTitle>
+              {selectedBulletin && (
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => handlePrintBulletin(selectedBulletin)}>
+                  <Printer className="w-4 h-4" /> Imprimer
+                </Button>
+              )}
             </DialogHeader>
             {selectedBulletin && (
               <div className="space-y-6 mt-4">

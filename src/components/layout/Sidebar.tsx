@@ -28,6 +28,7 @@ import {
   Menu,
   UserCircle,
   Inbox,
+  MessageCircle,
 } from "lucide-react";
 
 type UserRole = "admin" | "teacher" | "student";
@@ -58,11 +59,13 @@ const navItems: NavItem[] = [
   { icon: School, label: "Classes", href: "/classes", roles: ["admin"] },
   { icon: BookOpen, label: "Matières", href: "/matieres", roles: ["admin"] },
   { icon: ClipboardList, label: "Notes", href: "/notes", roles: ["teacher"] },
+  { icon: ClipboardList, label: "Mes Notes", href: "/mes-notes", roles: ["student"] },
   { icon: Star, label: "Appréciations", href: "/appreciations", roles: ["teacher"], principalOnly: true },
   { icon: FileText, label: "Bulletins", href: "/bulletins", roles: ["admin", "teacher", "student"], principalOnly: false },
   { icon: Receipt, label: "Facturation", href: "/invoices", roles: ["admin", "teacher", "student"] },
   { icon: Receipt, label: "Articles", href: "/articles", roles: ["student"] },
   { icon: FolderOpen, label: "Documents", href: "/documents", roles: ["admin", "teacher", "student"] },
+  { icon: MessageCircle, label: "Chat", href: "/chat", roles: ["teacher", "student"] },
   { icon: UserCircle, label: "Mon Profil", href: "/profile", roles: ["teacher", "student"] },
   { icon: Settings, label: "Paramètres", href: "/parametres", roles: ["admin", "teacher", "student"] },
 ];

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { 
   CalendarDays, Plus, Trash2, Pencil, MapPin, Clock, 
-  PartyPopper, Trophy, Award, Users, Calendar, Search
+  PartyPopper, Trophy, Award, Users, Calendar, Search, Printer
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -240,6 +240,24 @@ const Events = () => {
   const isUpcoming = (date: string) => new Date(date) > new Date();
   const isPast = (date: string) => new Date(date) < new Date();
 
+  const handlePrintEvents = () => {
+    const eventsContent = filteredEvents.map(evt => {
+      const typeInfo = getEventTypeInfo(evt.event_type);
+      return `<div style="margin-bottom:20px;border-bottom:1px solid #eee;padding-bottom:12px;">
+        <h3 style="margin:0 0 4px 0;">${evt.title}</h3>
+        <p style="margin:0;color:#666;font-size:12px;">📅 ${formatEventDate(evt.start_date, evt.end_date)}${evt.location ? ` | 📍 ${evt.location}` : ''} | Type: ${typeInfo.label}</p>
+        ${evt.description ? `<p style="margin:8px 0 0 0;font-size:14px;">${evt.description}</p>` : ''}
+      </div>`;
+    }).join('');
+    
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(`<html><head><title>Événements</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;padding:0 20px;}@media print{body{margin:0;}}</style></head><body><h1 style="text-align:center;margin-bottom:24px;">Événements</h1>${eventsContent}</body></html>`);
+      win.document.close();
+      win.print();
+    }
+  };
+
   const filteredEvents = events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (evt.description?.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -381,6 +399,9 @@ const Events = () => {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="icon" onClick={handlePrintEvents} title="Imprimer en PDF">
+            <Printer className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* Upcoming Events */}

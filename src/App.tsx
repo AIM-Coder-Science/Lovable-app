@@ -12,6 +12,7 @@ import Apprenants from "./pages/Apprenants";
 import Classes from "./pages/Classes";
 import Matieres from "./pages/Matieres";
 import Notes from "./pages/Notes";
+import MesNotes from "./pages/MesNotes";
 import Appreciations from "./pages/Appreciations";
 import BulletinsPage from "./pages/BulletinsPage";
 import Documents from "./pages/Documents";
@@ -24,7 +25,7 @@ import Articles from "./pages/Articles";
 import Profile from "./pages/Profile";
 import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
-
+import Chat from "./pages/Chat";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="/classes" element={<Classes />} />
           <Route path="/matieres" element={<Matieres />} />
           <Route path="/notes" element={<Notes />} />
+          <Route path="/mes-notes" element={<MesNotes />} />
           <Route path="/appreciations" element={<Appreciations />} />
           <Route path="/bulletins" element={<BulletinsPage />} />
           <Route path="/documents" element={<Documents />} />
@@ -54,6 +56,7 @@ const App = () => (
           <Route path="/articles" element={<Articles />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/chat" element={<Chat />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

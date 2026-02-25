@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Bell, Calendar, Plus, Pencil, Trash2, Megaphone, Users, GraduationCap, Search, Filter } from "lucide-react";
+import { Bell, Calendar, Plus, Pencil, Trash2, Megaphone, Users, GraduationCap, Search, Filter, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -198,6 +198,24 @@ const Actualites = () => {
     return matchesSearch && (role !== 'admin' || matchesFilter);
   });
 
+  const handlePrintPublications = () => {
+    const printContent = filteredPublications.map(pub => {
+      const date = new Date(pub.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+      return `<div style="margin-bottom:24px;border-bottom:1px solid #eee;padding-bottom:16px;">
+        <h2 style="margin:0 0 4px 0;font-size:18px;">${pub.title}</h2>
+        <p style="margin:0 0 8px 0;color:#666;font-size:12px;">${date}</p>
+        <p style="margin:0;font-size:14px;white-space:pre-wrap;">${pub.content}</p>
+      </div>`;
+    }).join('');
+    
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(`<html><head><title>Actualités</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;padding:0 20px;}@media print{body{margin:0;}}</style></head><body><h1 style="text-align:center;margin-bottom:24px;">Actualités</h1>${printContent}</body></html>`);
+      win.document.close();
+      win.print();
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-in">
@@ -283,6 +301,9 @@ const Actualites = () => {
               </SelectContent>
             </Select>
           )}
+          <Button variant="outline" size="icon" onClick={handlePrintPublications} title="Imprimer en PDF">
+            <Printer className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* Stats Cards for Admin */}

@@ -191,13 +191,13 @@ const Notes = () => {
 
       if (type === 'interro' && index >= 0 && index < MAX_INTERROS) {
         newGradesMap[g.student_id].interros[index] = g.value;
-        newGradeIds[`${g.student_id}-interro-${index}`] = g.id;
+        newGradeIds[`${g.student_id}::interro::${index}`] = g.id;
       } else if (type === 'devoir' && index >= 0 && index < MAX_DEVOIRS) {
         newGradesMap[g.student_id].devoirs[index] = g.value;
-        newGradeIds[`${g.student_id}-devoir-${index}`] = g.id;
+        newGradeIds[`${g.student_id}::devoir::${index}`] = g.id;
       } else if (type === 'exam') {
         newGradesMap[g.student_id].exam = g.value;
-        newGradeIds[`${g.student_id}-exam-0`] = g.id;
+        newGradeIds[`${g.student_id}::exam::0`] = g.id;
       }
     });
 
@@ -243,7 +243,7 @@ const Notes = () => {
       return { ...prev, [studentId]: studentGrades };
     });
 
-    setPendingChanges(prev => new Set(prev).add(`${studentId}-${type}-${index}`));
+    setPendingChanges(prev => new Set(prev).add(`${studentId}::${type}::${index}`));
   };
 
   const saveAllChanges = async () => {
@@ -256,7 +256,7 @@ const Notes = () => {
       const inserts: any[] = [];
 
       pendingChanges.forEach(key => {
-        const [studentId, type, indexStr] = key.split('-');
+        const [studentId, type, indexStr] = key.split('::');
         const index = parseInt(indexStr);
         const studentGrades = gradesMap[studentId];
         if (!studentGrades) return;
@@ -444,15 +444,37 @@ const Notes = () => {
             <h1 className="text-3xl font-bold text-foreground">Saisie des Notes</h1>
             <p className="text-muted-foreground">Interface de saisie rapide des notes</p>
           </div>
-          <Button 
-            onClick={saveAllChanges} 
-            disabled={pendingChanges.size === 0 || saving}
-            className="gap-2"
-            size="lg"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Enregistrement...' : `Enregistrer (${pendingChanges.size})`}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline"
+              onClick={() => {
+                const cleared: Record<string, StudentGrades> = {};
+                students.forEach(s => {
+                  cleared[s.id] = { interros: Array(MAX_INTERROS).fill(null), devoirs: Array(MAX_DEVOIRS).fill(null), exam: null };
+                });
+                setGradesMap(cleared);
+                const allKeys = new Set<string>();
+                students.forEach(s => {
+                  for (let i = 0; i < MAX_INTERROS; i++) allKeys.add(`${s.id}::interro::${i}`);
+                  for (let i = 0; i < MAX_DEVOIRS; i++) allKeys.add(`${s.id}::devoir::${i}`);
+                  allKeys.add(`${s.id}::exam::0`);
+                });
+                setPendingChanges(allKeys);
+              }}
+              className="gap-2"
+            >
+              Tout effacer
+            </Button>
+            <Button 
+              onClick={saveAllChanges} 
+              disabled={pendingChanges.size === 0 || saving}
+              className="gap-2"
+              size="lg"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Enregistrement...' : `Enregistrer (${pendingChanges.size})`}
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}

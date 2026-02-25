@@ -193,6 +193,102 @@ export type Database = {
           },
         ]
       }
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          room_id: string
+          sender_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          room_id: string
+          sender_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          room_id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_room_members: {
+        Row: {
+          id: string
+          joined_at: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_room_members_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_rooms: {
+        Row: {
+          class_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          room_type: string
+        }
+        Insert: {
+          class_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          room_type?: string
+        }
+        Update: {
+          class_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          room_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_rooms_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_fees: {
         Row: {
           academic_year: string
@@ -807,6 +903,7 @@ export type Database = {
       school_settings: {
         Row: {
           academic_year: string
+          chat_enabled: boolean
           created_at: string
           grading_system: string
           id: string
@@ -818,6 +915,7 @@ export type Database = {
         }
         Insert: {
           academic_year?: string
+          chat_enabled?: boolean
           created_at?: string
           grading_system?: string
           id?: string
@@ -829,6 +927,7 @@ export type Database = {
         }
         Update: {
           academic_year?: string
+          chat_enabled?: boolean
           created_at?: string
           grading_system?: string
           id?: string

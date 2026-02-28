@@ -6,29 +6,123 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * Vérifie la signature HMAC du webhook FedaPay.
+ * Nécessite FEDAPAY_WEBHOOK_SECRET dans les secrets Supabase.
+ */
+async function verifyWebhookSignature(req: Request, body: string): Promise<boolean> {
+  const webhookSecret = Deno.env.get('FEDAPAY_WEBHOOK_SECRET');
+  if (!webhookSecret) {
+    console.warn('FEDAPAY_WEBHOOK_SECRET non configuré — validation désactivée en dev');
+    return true; // À activer en production
+  }
+
+  const signature = req.headers.get('x-fedapay-signature') ?? req.headers.get('x-webhook-signature');
+  if (!signature) return false;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(webhookSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sigBuffer = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+  const expected = 'sha256=' + Array.from(new Uint8Array(sigBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Comparaison en temps constant
+  return signature.length === expected.length && signature === expected;
+}
+
+async function applyPaymentToArticle(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  studentId: string,
+  articleId: string,
+  amount: number
+) {
+  const { data: studentArticle } = await supabaseAdmin
+    .from('student_articles')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('article_id', articleId)
+    .single();
+
+  if (!studentArticle) return;
+
+  const newAmountPaid = studentArticle.amount_paid + amount;
+  const status = newAmountPaid >= studentArticle.amount ? 'paid' : 'partial';
+
+  await supabaseAdmin
+    .from('student_articles')
+    .update({
+      amount_paid: newAmountPaid,
+      status,
+      payment_date: status === 'paid' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', studentArticle.id);
+}
+
+async function applyPaymentToInvoice(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  invoiceId: string,
+  amount: number
+) {
+  const { data: invoice } = await supabaseAdmin
+    .from('invoices')
+    .select('*')
+    .eq('id', invoiceId)
+    .single();
+
+  if (!invoice) return;
+
+  const newAmountPaid = invoice.amount_paid + amount;
+  const status = newAmountPaid >= invoice.amount ? 'paid' : 'partial';
+
+  await supabaseAdmin
+    .from('invoices')
+    .update({
+      amount_paid: newAmountPaid,
+      status,
+      payment_date: status === 'paid' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoice.id);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
+  const rawBody = await req.text();
+
+  // ── Vérification signature webhook ─────────────────────────────────────
+  const isValid = await verifyWebhookSignature(req, rawBody);
+  if (!isValid) {
+    console.error('Signature webhook invalide');
+    return new Response(JSON.stringify({ error: 'Signature invalide' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
 
-    const body = await req.json();
-    console.log('Webhook received:', JSON.stringify(body));
+  try {
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
 
-    // FedaPay webhook structure
+    const body = JSON.parse(rawBody);
+    console.log('Webhook received:', body?.event);
+
     const { entity, event } = body;
-    
+
     if (!entity || entity.name !== 'Transaction') {
-      return new Response(JSON.stringify({ message: 'Non-transaction event ignored' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ message: 'Événement non-transaction ignoré' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -37,150 +131,86 @@ serve(async (req) => {
     const fedapayTransactionId = transaction.id.toString();
     const metadata = transaction.metadata || {};
 
-    console.log('Processing transaction:', fedapayTransactionId, 'Status:', status);
-
-    // Find our transaction by FedaPay reference
-    const { data: ourTransaction, error: findError } = await supabaseAdmin
+    // Cherche la transaction locale
+    let ourTransaction = null;
+    const { data: txByRef } = await supabaseAdmin
       .from('payment_transactions')
       .select('*')
       .eq('transaction_ref', fedapayTransactionId)
-      .single();
+      .maybeSingle();
 
-    if (findError || !ourTransaction) {
-      // Try using metadata
-      if (metadata.transaction_id) {
-        const { data: txByMetadata } = await supabaseAdmin
-          .from('payment_transactions')
-          .select('*')
-          .eq('id', metadata.transaction_id)
-          .single();
-        
-        if (!txByMetadata) {
-          console.error('Transaction not found:', fedapayTransactionId);
-          return new Response(JSON.stringify({ error: 'Transaction not found' }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-      } else {
-        console.error('Transaction not found:', fedapayTransactionId);
-        return new Response(JSON.stringify({ error: 'Transaction not found' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
+    ourTransaction = txByRef;
+
+    if (!ourTransaction && metadata.transaction_id) {
+      const { data: txByMeta } = await supabaseAdmin
+        .from('payment_transactions')
+        .select('*')
+        .eq('id', metadata.transaction_id)
+        .maybeSingle();
+      ourTransaction = txByMeta;
     }
 
-    const transactionRecord = ourTransaction || null;
-    if (!transactionRecord) {
-      return new Response(JSON.stringify({ error: 'Transaction record not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    if (!ourTransaction) {
+      console.error('Transaction introuvable:', fedapayTransactionId);
+      // Retourne 200 pour éviter les retry infinis de FedaPay
+      return new Response(JSON.stringify({ message: 'Transaction non trouvée — ignorée' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Map FedaPay status to our status
-    let newStatus = 'pending';
-    if (status === 'approved') {
-      newStatus = 'completed';
-    } else if (status === 'declined' || status === 'cancelled' || status === 'refunded') {
-      newStatus = 'failed';
+    // Évite de retraiter un paiement déjà complété (idempotence)
+    if (ourTransaction.status === 'completed') {
+      return new Response(JSON.stringify({ success: true, message: 'Déjà traité' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    // Update our transaction
+    const newStatus =
+      status === 'approved' ? 'completed'
+        : ['declined', 'cancelled', 'refunded'].includes(status) ? 'failed'
+          : 'pending';
+
     await supabaseAdmin
       .from('payment_transactions')
-      .update({ 
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', transactionRecord.id);
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', ourTransaction.id);
 
-    // If payment approved, update the student_article or invoice
     if (newStatus === 'completed') {
-      if (transactionRecord.article_id) {
-        // Update student_article
-        const { data: studentArticle } = await supabaseAdmin
-          .from('student_articles')
-          .select('*')
-          .eq('student_id', transactionRecord.student_id)
-          .eq('article_id', transactionRecord.article_id)
-          .single();
-
-        if (studentArticle) {
-          const newAmountPaid = studentArticle.amount_paid + transactionRecord.amount;
-          const articleStatus = newAmountPaid >= studentArticle.amount ? 'paid' : 'partial';
-
-          await supabaseAdmin
-            .from('student_articles')
-            .update({
-              amount_paid: newAmountPaid,
-              status: articleStatus,
-              payment_date: articleStatus === 'paid' ? new Date().toISOString() : null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', studentArticle.id);
-        }
+      if (ourTransaction.article_id && ourTransaction.student_id) {
+        await applyPaymentToArticle(supabaseAdmin, ourTransaction.student_id, ourTransaction.article_id, ourTransaction.amount);
+      }
+      if (ourTransaction.invoice_id) {
+        await applyPaymentToInvoice(supabaseAdmin, ourTransaction.invoice_id, ourTransaction.amount);
       }
 
-      if (transactionRecord.invoice_id) {
-        // Update invoice
-        const { data: invoice } = await supabaseAdmin
-          .from('invoices')
-          .select('*')
-          .eq('id', transactionRecord.invoice_id)
-          .single();
-
-        if (invoice) {
-          const newAmountPaid = invoice.amount_paid + transactionRecord.amount;
-          const invoiceStatus = newAmountPaid >= invoice.amount ? 'paid' : 'partial';
-
-          await supabaseAdmin
-            .from('invoices')
-            .update({
-              amount_paid: newAmountPaid,
-              status: invoiceStatus,
-              payment_date: invoiceStatus === 'paid' ? new Date().toISOString() : null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', invoice.id);
-        }
-      }
-
-      // Create notification for the student
-      if (transactionRecord.student_id) {
+      if (ourTransaction.student_id) {
         const { data: student } = await supabaseAdmin
           .from('students')
           .select('user_id')
-          .eq('id', transactionRecord.student_id)
+          .eq('id', ourTransaction.student_id)
           .single();
 
-        if (student) {
-          await supabaseAdmin
-            .from('notifications')
-            .insert({
-              user_id: student.user_id,
-              type: 'payment',
-              title: 'Paiement confirmé',
-              message: `Votre paiement de ${transactionRecord.amount} FCFA a été confirmé.`,
-              metadata: { transaction_id: transactionRecord.id },
-            });
+        if (student?.user_id) {
+          await supabaseAdmin.from('notifications').insert({
+            user_id: student.user_id,
+            type: 'payment',
+            title: 'Paiement confirmé',
+            message: `Votre paiement de ${ourTransaction.amount} FCFA a été confirmé.`,
+            metadata: { transaction_id: ourTransaction.id },
+          });
         }
       }
     }
 
-    console.log('Transaction updated successfully');
-
     return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error: any) {
-    console.error('Webhook error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erreur inconnue';
+    console.error('Webhook error:', message);
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
 
@@ -14,93 +14,108 @@ interface AuthState {
   loading: boolean;
 }
 
+const INITIAL_STATE: AuthState = {
+  user: null,
+  role: null,
+  profileId: null,
+  teacherId: null,
+  studentId: null,
+  isPrincipal: false,
+  loading: true,
+};
+
 export const useAuth = () => {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    role: null,
-    profileId: null,
-    teacherId: null,
-    studentId: null,
-    isPrincipal: false,
-    loading: true,
-  });
+  const [authState, setAuthState] = useState<AuthState>(INITIAL_STATE);
+  // Évite les setState sur un composant démonté
+  const isMounted = useRef(true);
 
   useEffect(() => {
+    isMounted.current = true;
+
     const fetchAuthState = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setAuthState(prev => ({ ...prev, loading: false }));
+      // Utilise getUser() au lieu de getSession() pour valider côté serveur
+      const { data: { user }, error } = await supabase.auth.getUser();
+
+      if (!isMounted.current) return;
+
+      if (error || !user) {
+        setAuthState({ ...INITIAL_STATE, loading: false });
         return;
       }
 
-      // Fetch role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Fetch role + profile en parallèle
+      const [roleResult, profileResult] = await Promise.all([
+        supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle(),
+        supabase.from('profiles').select('id').eq('user_id', user.id).maybeSingle(),
+      ]);
 
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      if (!isMounted.current) return;
 
-      let teacherId = null;
+      const role = roleResult.data?.role as UserRole | null;
+      let teacherId: string | null = null;
       let isPrincipal = false;
-      let studentId = null;
+      let studentId: string | null = null;
 
-      if (roleData?.role === 'teacher') {
-        const { data: teacherData } = await supabase
+      if (role === 'teacher') {
+        const teacherResult = await supabase
           .from('teachers')
           .select('id')
           .eq('user_id', user.id)
           .maybeSingle();
-        
-        teacherId = teacherData?.id;
+
+        if (!isMounted.current) return;
+
+        teacherId = teacherResult.data?.id ?? null;
 
         if (teacherId) {
-          const { data: principalData } = await supabase
+          const principalResult = await supabase
             .from('teacher_classes')
-            .select('id')
+            .select('id', { count: 'exact', head: true })
             .eq('teacher_id', teacherId)
             .eq('is_principal', true)
             .limit(1);
-          
-          isPrincipal = (principalData?.length ?? 0) > 0;
+
+          if (!isMounted.current) return;
+
+          isPrincipal = (principalResult.count ?? 0) > 0;
         }
       }
 
-      if (roleData?.role === 'student') {
-        const { data: studentData } = await supabase
+      if (role === 'student') {
+        const studentResult = await supabase
           .from('students')
           .select('id')
           .eq('user_id', user.id)
           .maybeSingle();
-        
-        studentId = studentData?.id;
+
+        if (!isMounted.current) return;
+
+        studentId = studentResult.data?.id ?? null;
       }
 
-      setAuthState({
-        user,
-        role: roleData?.role as UserRole | null,
-        profileId: profileData?.id ?? null,
-        teacherId,
-        studentId,
-        isPrincipal,
-        loading: false,
-      });
+      if (isMounted.current) {
+        setAuthState({
+          user,
+          role,
+          profileId: profileResult.data?.id ?? null,
+          teacherId,
+          studentId,
+          isPrincipal,
+          loading: false,
+        });
+      }
     };
 
     fetchAuthState();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      fetchAuthState();
+      if (isMounted.current) fetchAuthState();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted.current = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return authState;

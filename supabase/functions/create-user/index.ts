@@ -6,24 +6,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * Génère un mot de passe sécurisé avec crypto.getRandomValues()
+ * au lieu de Math.random() (non-cryptographique).
+ */
 function generatePassword(length = 12): string {
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
   const numbers = '0123456789';
   const special = '!@#$%&*';
   const all = uppercase + lowercase + numbers + special;
-  
-  let password = '';
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += special[Math.floor(Math.random() * special.length)];
-  
-  for (let i = password.length; i < length; i++) {
-    password += all[Math.floor(Math.random() * all.length)];
+
+  const randomByte = () => {
+    const arr = new Uint8Array(1);
+    crypto.getRandomValues(arr);
+    return arr[0];
+  };
+
+  const pickChar = (charset: string) => charset[randomByte() % charset.length];
+
+  // Garantit au moins un caractère de chaque catégorie
+  const required = [
+    pickChar(uppercase),
+    pickChar(lowercase),
+    pickChar(numbers),
+    pickChar(special),
+  ];
+
+  const rest = Array.from({ length: length - required.length }, () => pickChar(all));
+  const combined = [...required, ...rest];
+
+  // Mélange avec Fisher-Yates + crypto
+  for (let i = combined.length - 1; i > 0; i--) {
+    const j = randomByte() % (i + 1);
+    [combined[i], combined[j]] = [combined[j], combined[i]];
   }
-  
-  return password.split('').sort(() => Math.random() - 0.5).join('');
+
+  return combined.join('');
 }
 
 serve(async (req) => {
@@ -34,11 +53,12 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
+
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
+    // ── Authentification appelant ──────────────────────────────────────────
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Non autorisé' }), {
@@ -48,13 +68,14 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user: callingUser }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
+
     if (authError || !callingUser) {
       return new Response(JSON.stringify({ error: 'Non autorisé' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    // Vérifie que l'appelant est bien admin
     const { data: roleData } = await supabaseAdmin
       .from('user_roles')
       .select('role')
@@ -68,7 +89,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { 
+    const {
       firstName, lastName, phone, userType,
       specialties, classId, birthday, parentName, parentPhone,
       matricule, email, permissions
@@ -80,17 +101,17 @@ serve(async (req) => {
       });
     }
 
-    // For admin creation, verify caller has can_manage_admins permission
+    // ── Création d'un ADMIN ────────────────────────────────────────────────
     if (userType === 'admin') {
       const { data: isSuperAdmin } = await supabaseAdmin.rpc('is_super_admin', { user_id: callingUser.id });
-      
+
       if (!isSuperAdmin) {
         const { data: callerPerms } = await supabaseAdmin
           .from('admin_permissions')
           .select('can_manage_admins')
           .eq('admin_user_id', callingUser.id)
           .maybeSingle();
-        
+
         if (!callerPerms?.can_manage_admins) {
           return new Response(JSON.stringify({ error: 'Vous n\'avez pas la permission de créer des administrateurs' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -104,7 +125,7 @@ serve(async (req) => {
         });
       }
 
-      const generatedPassword = generatePassword(12);
+      const generatedPassword = generatePassword(14);
 
       const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -123,13 +144,7 @@ serve(async (req) => {
 
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
-        .insert({
-          user_id: newUser.id,
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone: phone || null,
-        });
+        .insert({ user_id: newUser.id, first_name: firstName, last_name: lastName, email, phone: phone || null });
 
       if (profileError) {
         await supabaseAdmin.auth.admin.deleteUser(newUser.id);
@@ -149,20 +164,15 @@ serve(async (req) => {
         });
       }
 
-      // Create admin_permissions
-      const permData: Record<string, any> = {
+      // Permissions admin
+      const permData: Record<string, unknown> = {
         admin_user_id: newUser.id,
         created_by_user_id: callingUser.id,
+        ...(permissions ?? {}),
       };
-      if (permissions) {
-        Object.keys(permissions).forEach(key => {
-          permData[key] = permissions[key];
-        });
-      }
-
       await supabaseAdmin.from('admin_permissions').insert(permData);
 
-      // Store credentials
+      // Stocke le mot de passe généré (affiché une seule fois à l'admin)
       await supabaseAdmin.from('user_credentials').insert({
         user_id: newUser.id,
         generated_password: generatedPassword,
@@ -179,13 +189,13 @@ serve(async (req) => {
       });
     }
 
-    // Teacher / Student creation (existing logic)
+    // ── Création ENSEIGNANT / APPRENANT ────────────────────────────────────
     let finalMatricule = matricule;
     if (!finalMatricule) {
       const prefix = userType === 'teacher' ? 'EN' : 'AP';
       const { data: matriculeData, error: matriculeError } = await supabaseAdmin
         .rpc('generate_matricule', { p_prefix: prefix });
-      
+
       if (matriculeError) {
         return new Response(JSON.stringify({ error: 'Erreur lors de la génération du matricule' }), {
           status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -196,7 +206,7 @@ serve(async (req) => {
 
     const matriculeNumbers = finalMatricule.replace(/\D/g, '');
     const generatedEmail = `${lastName.charAt(0).toLowerCase()}${firstName.charAt(0).toLowerCase()}${matriculeNumbers}@tintin.edugest`;
-    const generatedPassword = generatePassword(12);
+    const generatedPassword = generatePassword(14);
 
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: generatedEmail,
@@ -244,16 +254,12 @@ serve(async (req) => {
       });
     }
 
-    let entityId = null;
+    let entityId: string | null = null;
 
     if (userType === 'teacher') {
       const { data: teacherData, error: teacherError } = await supabaseAdmin
         .from('teachers')
-        .insert({
-          user_id: newUser.id,
-          profile_id: profileData.id,
-          employee_id: finalMatricule,
-        })
+        .insert({ user_id: newUser.id, profile_id: profileData.id, employee_id: finalMatricule })
         .select()
         .single();
 
@@ -268,10 +274,7 @@ serve(async (req) => {
 
       if (specialties && specialties.length > 0) {
         await supabaseAdmin.from('teacher_specialties').insert(
-          specialties.map((subjectId: string) => ({
-            teacher_id: teacherData.id,
-            subject_id: subjectId,
-          }))
+          specialties.map((subjectId: string) => ({ teacher_id: teacherData.id, subject_id: subjectId }))
         );
       }
     } else {
@@ -291,7 +294,7 @@ serve(async (req) => {
 
       if (studentError) {
         await supabaseAdmin.auth.admin.deleteUser(newUser.id);
-        return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'étudiant' }), {
+        return new Response(JSON.stringify({ error: 'Erreur lors de la création de l\'apprenant' }), {
           status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -316,8 +319,10 @@ serve(async (req) => {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erreur inconnue';
+    console.error('create-user error:', message);
+    return new Response(JSON.stringify({ error: message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }

@@ -17,6 +17,7 @@ import {
   AlertCircle, BarChart3, Medal, Star
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { saveBulletinToDocuments } from "@/utils/bulletinPdf";
 
 interface Student {
   id: string;
@@ -325,41 +326,107 @@ const Appreciations = () => {
     }
   };
 
-  // Save appreciation
+  // Helper : récupère les settings école (mis en cache dans un ref pour éviter N appels)
+  const getSchoolSettings = async (): Promise<{ school_name: string; academic_year: string }> => {
+    const { data } = await supabase
+      .from('school_settings')
+      .select('school_name, academic_year')
+      .maybeSingle();
+    return data ?? { school_name: 'École', academic_year: '2024-2025' };
+  };
+
+  // Helper : construit les subjectGrades pour saveBulletinToDocuments
+  const buildSubjectGradesForDoc = (studentData: StudentWithGrades) =>
+    studentData.subjectGrades.map(sg => ({
+      subject_name: sg.subject_name,
+      coefficient: sg.coefficient,
+      average: sg.average,
+    }));
+
+  // Helper : sauvegarde ou met à jour un bulletin ET synchronise dans documents
+  const upsertBulletinAndDocument = async (
+    studentData: StudentWithGrades,
+    teacherAppreciation: string | null,
+    schoolName: string,
+    academicYear: string,
+    uploadedBy: string,
+  ) => {
+    const className = principalClasses.find(pc => pc.class_id === selectedClassId)?.class_name ?? '';
+
+    let bulletinId: string;
+
+    if (studentData.bulletin?.id) {
+      const { error } = await supabase
+        .from('bulletins')
+        .update({
+          teacher_appreciation: teacherAppreciation ?? studentData.bulletin.teacher_appreciation,
+          average: studentData.generalAverage,
+          rank: studentData.rank,
+          total_students: studentsWithGrades.length,
+        })
+        .eq('id', studentData.bulletin.id);
+      if (error) throw error;
+      bulletinId = studentData.bulletin.id;
+    } else {
+      const { data: inserted, error } = await supabase
+        .from('bulletins')
+        .insert({
+          student_id: studentData.student.id,
+          class_id: selectedClassId,
+          period: selectedPeriod,
+          teacher_appreciation: teacherAppreciation,
+          average: studentData.generalAverage,
+          rank: studentData.rank,
+          total_students: studentsWithGrades.length,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      bulletinId = inserted.id;
+    }
+
+    // Synchroniser dans la table documents
+    await saveBulletinToDocuments({
+      bulletinId,
+      studentId: studentData.student.id,
+      classId: selectedClassId,
+      uploadedBy,
+      supabaseClient: supabase,
+      schoolName,
+      academicYear,
+      period: selectedPeriod,
+      studentName: `${studentData.student.profile.first_name} ${studentData.student.profile.last_name}`,
+      studentMatricule: studentData.student.matricule,
+      className,
+      average: studentData.generalAverage,
+      rank: studentData.rank,
+      totalStudents: studentsWithGrades.length,
+      teacherAppreciation: teacherAppreciation ?? studentData.bulletin?.teacher_appreciation ?? null,
+      principalAppreciation: studentData.bulletin?.principal_appreciation ?? null,
+      adminSigned: false,
+      subjectGrades: buildSubjectGradesForDoc(studentData),
+    });
+  };
+
+  // Save appreciation (élève courant)
   const handleSaveAppreciation = async () => {
     if (!selectedStudent) return;
     setSaving(true);
 
     try {
-      if (selectedStudent.bulletin?.id) {
-        const { error } = await supabase
-          .from('bulletins')
-          .update({ 
-            teacher_appreciation: appreciation,
-            average: selectedStudent.generalAverage,
-            rank: selectedStudent.rank,
-            total_students: studentsWithGrades.length,
-          })
-          .eq('id', selectedStudent.bulletin.id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non authentifié');
+      const settings = await getSchoolSettings();
 
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('bulletins')
-          .insert({
-            student_id: selectedStudentId,
-            class_id: selectedClassId,
-            period: selectedPeriod,
-            teacher_appreciation: appreciation,
-            average: selectedStudent.generalAverage,
-            rank: selectedStudent.rank,
-            total_students: studentsWithGrades.length,
-          });
+      await upsertBulletinAndDocument(
+        selectedStudent,
+        appreciation,
+        settings.school_name,
+        settings.academic_year,
+        user.id,
+      );
 
-        if (error) throw error;
-      }
-
-      toast({ title: "Succès", description: "Bulletin enregistré avec succès" });
+      toast({ title: "Succès", description: "Bulletin enregistré et ajouté aux documents" });
       fetchStudentsAndGrades();
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
@@ -368,36 +435,26 @@ const Appreciations = () => {
     }
   };
 
-  // Save all bulletins
+  // Save all bulletins (toute la classe)
   const handleSaveAllBulletins = async () => {
     setSaving(true);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non authentifié');
+      const settings = await getSchoolSettings();
+
       for (const studentData of studentsWithGrades) {
-        if (studentData.bulletin?.id) {
-          await supabase
-            .from('bulletins')
-            .update({ 
-              average: studentData.generalAverage,
-              rank: studentData.rank,
-              total_students: studentsWithGrades.length,
-            })
-            .eq('id', studentData.bulletin.id);
-        } else {
-          await supabase
-            .from('bulletins')
-            .insert({
-              student_id: studentData.student.id,
-              class_id: selectedClassId,
-              period: selectedPeriod,
-              average: studentData.generalAverage,
-              rank: studentData.rank,
-              total_students: studentsWithGrades.length,
-            });
-        }
+        await upsertBulletinAndDocument(
+          studentData,
+          null, // on préserve l'appréciation existante
+          settings.school_name,
+          settings.academic_year,
+          user.id,
+        );
       }
 
-      toast({ title: "Succès", description: "Tous les bulletins ont été générés" });
+      toast({ title: "Succès", description: `${studentsWithGrades.length} bulletins générés et ajoutés aux documents` });
       fetchStudentsAndGrades();
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });

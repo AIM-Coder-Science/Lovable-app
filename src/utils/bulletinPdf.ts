@@ -140,3 +140,98 @@ export const printBulletin = (data: BulletinPdfData) => {
     printWindow.print();
   };
 };
+
+/**
+ * Génère un Blob HTML du bulletin et l'upload dans le storage Supabase,
+ * puis crée (ou met à jour) l'entrée correspondante dans la table `documents`.
+ *
+ * Retourne l'URL publique du fichier uploadé, ou null en cas d'erreur.
+ */
+export const saveBulletinToDocuments = async (
+  data: BulletinPdfData & {
+    bulletinId: string;
+    studentId: string;
+    classId: string;
+    uploadedBy: string;
+    supabaseClient: any; // typed as any to avoid circular import
+  }
+): Promise<string | null> => {
+  try {
+    const html = generateBulletinHtml(data);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+
+    // Nom de fichier déterministe : on peut l'écraser à chaque regénération
+    const safeName = data.studentName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+    const safePeriod = data.period.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+    const filePath = `bulletins/${data.classId}/${safePeriod}/${safeName}_${data.bulletinId}.html`;
+
+    // Upload (upsert : écrase si déjà existant)
+    const { error: uploadError } = await data.supabaseClient.storage
+      .from('documents')
+      .upload(filePath, blob, {
+        contentType: 'text/html',
+        upsert: true,
+      });
+
+    if (uploadError) throw uploadError;
+
+    // URL publique
+    const { data: urlData } = data.supabaseClient.storage
+      .from('documents')
+      .getPublicUrl(filePath);
+
+    const publicUrl = urlData.publicUrl;
+
+    // Titre lisible
+    const docTitle = `Bulletin ${data.studentName} — ${data.period} (${data.academicYear})`;
+
+    // Vérifier si un document de ce bulletin existe déjà
+    const { data: existing } = await data.supabaseClient
+      .from('documents')
+      .select('id')
+      .eq('file_url', publicUrl)
+      .maybeSingle();
+
+    if (existing?.id) {
+      // Mettre à jour l'enregistrement existant
+      await data.supabaseClient
+        .from('documents')
+        .update({ title: docTitle, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+    } else {
+      // Chercher par student_id + period dans les métadonnées (via notes)
+      const { data: byStudent } = await data.supabaseClient
+        .from('documents')
+        .select('id')
+        .eq('doc_type', 'bulletin')
+        .eq('student_id', data.studentId)
+        .ilike('title', `%${data.period}%`)
+        .maybeSingle();
+
+      if (byStudent?.id) {
+        await data.supabaseClient
+          .from('documents')
+          .update({ title: docTitle, file_url: publicUrl })
+          .eq('id', byStudent.id);
+      } else {
+        // Créer un nouvel enregistrement
+        await data.supabaseClient
+          .from('documents')
+          .insert({
+            title: docTitle,
+            doc_type: 'bulletin',
+            file_url: publicUrl,
+            visibility: 'student',
+            class_id: data.classId,
+            student_id: data.studentId,
+            uploaded_by: data.uploadedBy,
+          });
+      }
+    }
+
+    return publicUrl;
+  } catch (err) {
+    console.error('[saveBulletinToDocuments]', err);
+    return null;
+  }
+};

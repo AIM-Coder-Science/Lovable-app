@@ -12,7 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { FileText, CheckCircle, Eye, Download, Printer } from "lucide-react";
-import { printBulletin } from "@/utils/bulletinPdf";
+import { printBulletin, saveBulletinToDocuments } from "@/utils/bulletinPdf";
 
 interface BulletinData {
   id: string;
@@ -259,6 +259,48 @@ const BulletinsPage = () => {
     }
   }, [selectedClassId, selectedPeriod, authLoading, role, studentId]);
 
+  // Helper : resync le document pour un bulletin (après signature admin ou appréciation chef)
+  const resyncBulletinDocument = async (bulletin: BulletinData, overrides?: {
+    principalAppreciation?: string | null;
+    adminSigned?: boolean;
+  }) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Récupérer class_id depuis la table bulletins
+      const { data: bData } = await supabase
+        .from('bulletins')
+        .select('class_id')
+        .eq('id', bulletin.id)
+        .maybeSingle();
+      if (!bData?.class_id) return;
+
+      await saveBulletinToDocuments({
+        bulletinId: bulletin.id,
+        studentId: bulletin.student_id,
+        classId: bData.class_id,
+        uploadedBy: user.id,
+        supabaseClient: supabase,
+        schoolName: schoolSettings.school_name || 'École',
+        academicYear: schoolSettings.academic_year || '',
+        period: selectedPeriod,
+        studentName: bulletin.student_name,
+        studentMatricule: bulletin.student_matricule,
+        className: classes.find(c => c.id === selectedClassId)?.name || '',
+        average: bulletin.average,
+        rank: bulletin.rank,
+        totalStudents: bulletin.total_students,
+        teacherAppreciation: bulletin.teacher_appreciation,
+        principalAppreciation: overrides?.principalAppreciation ?? bulletin.principal_appreciation,
+        adminSigned: overrides?.adminSigned ?? bulletin.admin_signature,
+        subjectGrades: bulletin.subjectGrades,
+      });
+    } catch (err) {
+      console.error('[resyncBulletinDocument]', err);
+    }
+  };
+
   const handleSignBulletin = async (bulletinId: string) => {
     try {
       const { error } = await supabase
@@ -270,6 +312,10 @@ const BulletinsPage = () => {
         .eq('id', bulletinId);
 
       if (error) throw error;
+
+      // Resync le document avec la signature admin
+      const bulletin = bulletins.find(b => b.id === bulletinId);
+      if (bulletin) await resyncBulletinDocument(bulletin, { adminSigned: true });
 
       toast({ title: "Succès", description: "Bulletin signé avec succès" });
       fetchBulletins();
@@ -288,6 +334,9 @@ const BulletinsPage = () => {
         .eq('id', selectedBulletin.id);
 
       if (error) throw error;
+
+      // Resync le document avec la nouvelle appréciation du chef
+      await resyncBulletinDocument(selectedBulletin, { principalAppreciation });
 
       toast({ title: "Succès", description: "Appréciation enregistrée" });
       setIsViewDialogOpen(false);

@@ -3,7 +3,9 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
+import { useChatUnreadCount } from "@/hooks/useChatUnreadCount";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   GraduationCap,
@@ -75,6 +77,9 @@ export const Sidebar = ({ userRole, userName = "Utilisateur", isPrincipal = fals
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const isChatPage = location.pathname.startsWith("/chat");
+  const shouldTrackUnread = userRole === "teacher" || userRole === "student";
+  const { unreadCount } = useChatUnreadCount(shouldTrackUnread, isChatPage);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -132,12 +137,25 @@ export const Sidebar = ({ userRole, userName = "Utilisateur", isPrincipal = fals
               className={cn(
                 "sidebar-link w-full",
                 isActive ? "sidebar-link-active" : "sidebar-link-inactive",
-                !mobile && isCollapsed && "justify-center px-0"
+                !mobile && isCollapsed && "justify-center px-0",
+                item.href === "/chat" && unreadCount > 0 && !mobile && isCollapsed && "relative"
               )}
               title={!mobile && isCollapsed ? item.label : undefined}
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {(mobile || !isCollapsed) && <span>{item.label}</span>}
+              {(mobile || !isCollapsed) && (
+                <>
+                  <span>{item.label}</span>
+                  {item.href === "/chat" && unreadCount > 0 && (
+                    <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[10px] min-w-6 justify-center">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </Badge>
+                  )}
+                </>
+              )}
+              {item.href === "/chat" && unreadCount > 0 && !mobile && isCollapsed && (
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-destructive" />
+              )}
             </button>
           );
         })}

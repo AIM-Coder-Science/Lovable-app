@@ -20,10 +20,8 @@ interface Document {
   file_url: string;
   visibility: string;
   class_id: string | null;
-  student_id: string | null;
   created_at: string;
   class_name?: string;
-  student_name?: string;
 }
 
 const DOC_TYPES = [
@@ -57,25 +55,18 @@ const Documents = () => {
     const { data, error } = await supabase
       .from('documents')
       .select(`
-        id, title, doc_type, file_url, visibility, class_id, student_id, created_at,
-        classes (name),
-        students!documents_student_id_fkey (
-          profiles!students_profile_id_fkey (first_name, last_name)
-        )
+        id, title, doc_type, file_url, visibility, class_id, created_at,
+        classes (name)
       `)
       .order('created_at', { ascending: false });
 
     if (error) {
       toast({ title: "Erreur", description: "Impossible de charger les documents", variant: "destructive" });
     } else {
-      const formattedData = (data || []).map((d: any) => {
-        const profile = d.students?.profiles;
-        return {
-          ...d,
-          class_name: d.classes?.name,
-          student_name: profile ? `${profile.first_name} ${profile.last_name}` : undefined,
-        };
-      });
+      const formattedData = (data || []).map((d: any) => ({
+        ...d,
+        class_name: d.classes?.name,
+      }));
       setDocuments(formattedData);
     }
     setLoading(false);
@@ -348,8 +339,6 @@ const Documents = () => {
                       <TableCell>
                         {doc.visibility === "all" ? (
                           <Badge>Tous</Badge>
-                        ) : doc.visibility === "student" && doc.student_name ? (
-                          <Badge variant="secondary">{doc.student_name}</Badge>
                         ) : (
                           <Badge variant="secondary">{doc.class_name || "Classe"}</Badge>
                         )}

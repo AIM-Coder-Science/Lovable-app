@@ -63,6 +63,8 @@ const Parametres = () => {
     paymentReminderFrequency: "monthly",
     chatEnabled: false,
   });
+  const [configuringChat, setConfiguringChat] = useState(false);
+  const [lastChatSetupResult, setLastChatSetupResult] = useState<{ roomsCreated: number; ranAt: string } | null>(null);
 
   const fetchProfile = async () => {
     if (!profileId) return;
@@ -100,6 +102,42 @@ const Parametres = () => {
         paymentReminderFrequency: data.payment_reminder_frequency || 'monthly',
         chatEnabled: (data as any).chat_enabled ?? false,
       });
+    }
+  };
+
+  const setupChatRooms = async (showSuccessToast = true) => {
+    if (!schoolSettings.chatEnabled) {
+      toast({ title: "Chat désactivé", description: "Activez le chat puis enregistrez avant de configurer les salons.", variant: "destructive" });
+      return false;
+    }
+
+    setConfiguringChat(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('setup-chat-rooms');
+      if (error) throw error;
+
+      const roomsCreated = Number((data as { roomsCreated?: number } | null)?.roomsCreated ?? 0);
+      setLastChatSetupResult({ roomsCreated, ranAt: new Date().toISOString() });
+
+      if (showSuccessToast) {
+        toast({
+          title: "Messagerie configurée",
+          description: roomsCreated > 0
+            ? `${roomsCreated} salon(s) créé(s).`
+            : "Salons vérifiés, aucune création supplémentaire nécessaire.",
+        });
+      }
+
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "Erreur configuration chat",
+        description: error?.message || "Impossible de configurer les salons de discussion",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setConfiguringChat(false);
     }
   };
 
@@ -172,16 +210,19 @@ const Parametres = () => {
         .eq('id', schoolSettings.id);
       if (error) throw error;
 
-      // If chat was just enabled, setup chat rooms
+      let chatSetupOk = true;
       if (schoolSettings.chatEnabled) {
-        try {
-          await supabase.functions.invoke('setup-chat-rooms');
-        } catch (e) {
-          console.error('Chat room setup error:', e);
-        }
+        chatSetupOk = await setupChatRooms(false);
       }
 
-      toast({ title: "Succès", description: "Paramètres enregistrés avec succès" });
+      toast({
+        title: "Succès",
+        description: schoolSettings.chatEnabled
+          ? chatSetupOk
+            ? "Paramètres enregistrés et salons de chat synchronisés"
+            : "Paramètres enregistrés, mais la configuration des salons a échoué"
+          : "Paramètres enregistrés avec succès",
+      });
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
     } finally {
@@ -446,9 +487,9 @@ const Parametres = () => {
                   <MessageCircle className="w-4 h-4" />
                   Messagerie
                 </CardTitle>
-                <CardDescription>Activer ou désactiver le système de chat</CardDescription>
+                <CardDescription>Activer le chat et configurer les salons automatiquement</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <Label className="font-medium">Chat activé</Label>
@@ -458,6 +499,26 @@ const Parametres = () => {
                     checked={schoolSettings.chatEnabled}
                     onCheckedChange={v => setSchoolSettings({ ...schoolSettings, chatEnabled: v })}
                   />
+                </div>
+
+                <div className="p-3 border rounded-lg bg-muted/30 space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Utilisez ce bouton pour créer ou régénérer les salons de classe et enseignants après vos changements d'effectifs.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => setupChatRooms()}
+                    disabled={!schoolSettings.chatEnabled || configuringChat}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    {configuringChat ? "Configuration en cours..." : "Configurer / régénérer les salons"}
+                  </Button>
+                  {lastChatSetupResult && (
+                    <p className="text-xs text-muted-foreground">
+                      Dernière configuration : {lastChatSetupResult.roomsCreated} salon(s) créé(s) le {new Date(lastChatSetupResult.ranAt).toLocaleString('fr-FR')}.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>

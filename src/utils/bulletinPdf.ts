@@ -4,7 +4,7 @@ interface SubjectGradeData {
   average: number | null;
 }
 
-interface BulletinPdfData {
+export interface BulletinPdfData {
   schoolName: string;
   academicYear: string;
   period: string;
@@ -21,112 +21,203 @@ interface BulletinPdfData {
 }
 
 const getGradeColor = (value: number): string => {
-  if (value >= 16) return '#16a34a';
-  if (value >= 14) return '#22c55e';
+  if (value >= 16) return '#059669';
+  if (value >= 14) return '#16a34a';
   if (value >= 10) return '#2563eb';
   if (value >= 8) return '#ea580c';
   return '#dc2626';
 };
 
+const getGradeBg = (value: number): string => {
+  if (value >= 16) return '#ecfdf5';
+  if (value >= 14) return '#f0fdf4';
+  if (value >= 10) return '#eff6ff';
+  if (value >= 8) return '#fff7ed';
+  return '#fef2f2';
+};
+
+const getMention = (avg: number): string => {
+  if (avg >= 16) return 'Très Bien';
+  if (avg >= 14) return 'Bien';
+  if (avg >= 12) return 'Assez Bien';
+  if (avg >= 10) return 'Passable';
+  return 'Insuffisant';
+};
+
 export const generateBulletinHtml = (data: BulletinPdfData): string => {
   const subjectsWithGrades = data.subjectGrades.filter(sg => sg.average !== null);
   const totalCoeff = subjectsWithGrades.reduce((s, sg) => s + sg.coefficient, 0);
+  const totalCoeffAll = data.subjectGrades.reduce((s, sg) => s + sg.coefficient, 0);
 
-  const subjectRows = data.subjectGrades.map(sg => `
-    <tr>
-      <td style="padding:8px;border:1px solid #ddd;font-weight:500">${sg.subject_name}</td>
-      <td style="padding:8px;border:1px solid #ddd;text-align:center">${sg.coefficient}</td>
-      <td style="padding:8px;border:1px solid #ddd;text-align:center;color:${sg.average !== null ? getGradeColor(sg.average) : '#999'};font-weight:600">
-        ${sg.average !== null ? sg.average.toFixed(2) : '-'}
-      </td>
-      <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:600">
-        ${sg.average !== null ? (sg.average * sg.coefficient).toFixed(2) : '-'}
-      </td>
-    </tr>
-  `).join('');
+  const subjectRows = data.subjectGrades.map((sg, i) => {
+    const bgColor = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+    const gradeDisplay = sg.average !== null
+      ? `<span style="display:inline-block;padding:3px 10px;border-radius:6px;background:${getGradeBg(sg.average)};color:${getGradeColor(sg.average)};font-weight:700;font-size:14px">${sg.average.toFixed(2)}</span>`
+      : '<span style="color:#94a3b8">—</span>';
+    const coeffGrade = sg.average !== null
+      ? `<span style="font-weight:600;color:#334155">${(sg.average * sg.coefficient).toFixed(2)}</span>`
+      : '<span style="color:#94a3b8">—</span>';
+
+    return `
+    <tr style="background:${bgColor}">
+      <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:500;color:#1e293b;font-size:13px">${sg.subject_name}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b;font-size:13px">${sg.coefficient}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${gradeDisplay}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${coeffGrade}</td>
+    </tr>`;
+  }).join('');
+
+  const mention = data.average !== null ? getMention(data.average) : '';
+  const mentionColor = data.average !== null ? getGradeColor(data.average) : '#999';
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Bulletin - ${data.studentName}</title>
+<html lang="fr"><head><meta charset="utf-8"><title>Bulletin - ${data.studentName}</title>
 <style>
-  @page { size: A4; margin: 15mm; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; color: #1a1a1a; font-size: 13px; }
-  .header { text-align: center; margin-bottom: 20px; border-bottom: 3px solid #1e40af; padding-bottom: 15px; }
-  .header h1 { margin: 0; font-size: 22px; color: #1e40af; }
-  .header h2 { margin: 5px 0; font-size: 16px; color: #374151; font-weight: 400; }
-  .info-grid { display: flex; justify-content: space-between; margin: 15px 0; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
-  .info-item { text-align: center; }
-  .info-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-  .info-value { font-size: 15px; font-weight: 600; color: #1e293b; margin-top: 2px; }
-  table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-  th { background: #1e40af; color: white; padding: 10px 8px; text-align: center; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
-  th:first-child { text-align: left; }
-  tr:nth-child(even) { background: #f8fafc; }
-  .summary { display: flex; justify-content: center; gap: 30px; margin: 20px 0; padding: 15px; background: #eff6ff; border-radius: 8px; border: 2px solid #1e40af; }
-  .summary-item { text-align: center; }
-  .summary-label { font-size: 11px; color: #64748b; }
-  .summary-value { font-size: 24px; font-weight: 700; color: #1e40af; }
-  .appreciation { margin: 12px 0; padding: 12px; border-left: 4px solid #1e40af; background: #f8fafc; border-radius: 0 8px 8px 0; }
-  .appreciation-title { font-weight: 600; color: #1e40af; margin-bottom: 5px; font-size: 12px; text-transform: uppercase; }
-  .signature-section { display: flex; justify-content: space-between; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; }
-  .signature-box { text-align: center; width: 45%; }
-  .signature-line { border-top: 1px solid #94a3b8; margin-top: 50px; padding-top: 5px; font-size: 11px; color: #64748b; }
-  .stamp { color: #16a34a; font-weight: 600; font-size: 12px; margin-top: 5px; }
-  @media print { body { padding: 0; } }
+  @page { size: A4; margin: 12mm 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color: #1e293b; font-size: 13px; line-height: 1.5; padding: 0; }
+  
+  .page { max-width: 210mm; margin: 0 auto; padding: 20px 24px; }
+  
+  /* Header */
+  .header { text-align: center; padding-bottom: 16px; margin-bottom: 18px; position: relative; }
+  .header::after { content: ''; position: absolute; bottom: 0; left: 10%; right: 10%; height: 3px; background: linear-gradient(90deg, transparent, #1e40af, #3b82f6, #1e40af, transparent); border-radius: 2px; }
+  .school-name { font-size: 24px; font-weight: 800; color: #1e293b; letter-spacing: -0.5px; margin-bottom: 2px; }
+  .subtitle { font-size: 15px; color: #1e40af; font-weight: 600; margin: 4px 0; letter-spacing: 1px; text-transform: uppercase; }
+  .year-badge { display: inline-block; padding: 3px 16px; background: #1e40af; color: white; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+  
+  /* Student Info */
+  .info-bar { display: flex; gap: 0; margin: 16px 0; border-radius: 10px; overflow: hidden; border: 1.5px solid #e2e8f0; }
+  .info-cell { flex: 1; padding: 10px 14px; text-align: center; border-right: 1px solid #e2e8f0; }
+  .info-cell:last-child { border-right: none; }
+  .info-cell .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8; font-weight: 600; }
+  .info-cell .value { font-size: 14px; font-weight: 700; color: #1e293b; margin-top: 2px; }
+  
+  /* Table */
+  .grades-table { width: 100%; border-collapse: collapse; margin: 16px 0; border-radius: 10px; overflow: hidden; border: 1.5px solid #e2e8f0; }
+  .grades-table thead th { background: linear-gradient(135deg, #1e293b, #334155); color: white; padding: 11px 8px; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
+  .grades-table thead th:first-child { text-align: left; padding-left: 14px; }
+  .grades-table tfoot td { background: linear-gradient(135deg, #1e40af, #2563eb); color: white; font-weight: 700; padding: 11px 8px; text-align: center; font-size: 13px; }
+  .grades-table tfoot td:first-child { text-align: left; padding-left: 14px; }
+  
+  /* Summary */
+  .summary-grid { display: flex; gap: 12px; margin: 18px 0; }
+  .summary-card { flex: 1; text-align: center; padding: 14px 10px; border-radius: 10px; border: 1.5px solid #e2e8f0; }
+  .summary-card.main { background: linear-gradient(135deg, #eff6ff, #dbeafe); border-color: #93c5fd; }
+  .summary-card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; font-weight: 600; }
+  .summary-card .value { font-size: 26px; font-weight: 800; margin-top: 2px; }
+  .summary-card .sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+  
+  /* Appreciation */
+  .appreciation { margin: 10px 0; padding: 12px 16px; border-radius: 8px; background: #f8fafc; border-left: 4px solid #3b82f6; }
+  .appreciation .title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #1e40af; font-weight: 700; margin-bottom: 4px; }
+  .appreciation p { color: #334155; font-size: 13px; font-style: italic; }
+  
+  /* Signatures */
+  .signatures { display: flex; justify-content: space-between; margin-top: 28px; padding-top: 16px; }
+  .sig-box { width: 42%; text-align: center; }
+  .sig-title { font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sig-line { border-top: 1px dashed #94a3b8; margin-top: 48px; padding-top: 6px; font-size: 10px; color: #94a3b8; }
+  .sig-stamp { display: inline-block; margin-top: 8px; padding: 3px 12px; background: #dcfce7; color: #16a34a; border-radius: 4px; font-size: 11px; font-weight: 700; border: 1px solid #86efac; }
+  
+  /* Footer */
+  .footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; }
+  
+  @media print { body { padding: 0; } .page { padding: 0; } }
 </style></head><body>
+<div class="page">
   <div class="header">
-    <h1>${data.schoolName}</h1>
-    <h2>Bulletin de Notes - ${data.period}</h2>
-    <p style="margin:3px 0;color:#64748b;font-size:12px">Année Académique : ${data.academicYear}</p>
+    <div class="school-name">${data.schoolName}</div>
+    <div class="subtitle">Bulletin de Notes — ${data.period}</div>
+    <div class="year-badge">Année ${data.academicYear}</div>
   </div>
 
-  <div class="info-grid">
-    <div class="info-item"><div class="info-label">Élève</div><div class="info-value">${data.studentName}</div></div>
-    <div class="info-item"><div class="info-label">Matricule</div><div class="info-value">${data.studentMatricule}</div></div>
-    <div class="info-item"><div class="info-label">Classe</div><div class="info-value">${data.className || '-'}</div></div>
-    <div class="info-item"><div class="info-label">Rang</div><div class="info-value">${data.rank && data.totalStudents ? `${data.rank}/${data.totalStudents}` : '-'}</div></div>
+  <div class="info-bar">
+    <div class="info-cell">
+      <div class="label">Nom de l'élève</div>
+      <div class="value">${data.studentName}</div>
+    </div>
+    <div class="info-cell">
+      <div class="label">Matricule</div>
+      <div class="value">${data.studentMatricule}</div>
+    </div>
+    <div class="info-cell">
+      <div class="label">Classe</div>
+      <div class="value">${data.className || '—'}</div>
+    </div>
+    <div class="info-cell">
+      <div class="label">Classement</div>
+      <div class="value">${data.rank && data.totalStudents ? `${data.rank}<span style="font-weight:400;color:#64748b;font-size:12px">/${data.totalStudents}</span>` : '—'}</div>
+    </div>
   </div>
 
-  <table>
-    <thead><tr><th style="text-align:left">Matière</th><th>Coef.</th><th>Moyenne /20</th><th>Moy. Coef.</th></tr></thead>
+  <table class="grades-table">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding-left:14px;width:40%">Matière</th>
+        <th style="width:15%">Coefficient</th>
+        <th style="width:22%">Moyenne / 20</th>
+        <th style="width:23%">Moy. Coeff.</th>
+      </tr>
+    </thead>
     <tbody>${subjectRows}</tbody>
     <tfoot>
-      <tr style="background:#1e40af;color:white;font-weight:700">
-        <td style="padding:10px 8px;border:1px solid #1e40af">TOTAL</td>
-        <td style="padding:10px 8px;border:1px solid #1e40af;text-align:center">${totalCoeff}</td>
-        <td style="padding:10px 8px;border:1px solid #1e40af;text-align:center;font-size:16px">${data.average !== null ? data.average.toFixed(2) : '-'}</td>
-        <td style="padding:10px 8px;border:1px solid #1e40af;text-align:center"></td>
+      <tr>
+        <td>TOTAL GÉNÉRAL</td>
+        <td style="text-align:center">${totalCoeffAll}</td>
+        <td style="text-align:center;font-size:16px">${data.average !== null ? data.average.toFixed(2) : '—'}</td>
+        <td style="text-align:center">${data.average !== null && totalCoeff > 0 ? (subjectsWithGrades.reduce((s, sg) => s + (sg.average! * sg.coefficient), 0)).toFixed(2) : '—'}</td>
       </tr>
     </tfoot>
   </table>
 
-  <div class="summary">
-    <div class="summary-item"><div class="summary-label">Moyenne Générale</div><div class="summary-value" style="color:${data.average ? getGradeColor(data.average) : '#999'}">${data.average !== null ? data.average.toFixed(2) : '-'}/20</div></div>
-    ${data.rank ? `<div class="summary-item"><div class="summary-label">Classement</div><div class="summary-value">${data.rank}<span style="font-size:14px;color:#64748b">/${data.totalStudents}</span></div></div>` : ''}
+  <div class="summary-grid">
+    <div class="summary-card main">
+      <div class="label">Moyenne Générale</div>
+      <div class="value" style="color:${data.average !== null ? getGradeColor(data.average) : '#94a3b8'}">${data.average !== null ? data.average.toFixed(2) : '—'}<span style="font-size:14px;font-weight:400;color:#64748b">/20</span></div>
+      ${data.average !== null ? `<div class="sub" style="color:${mentionColor};font-weight:700">Mention : ${mention}</div>` : ''}
+    </div>
+    ${data.rank ? `
+    <div class="summary-card">
+      <div class="label">Rang</div>
+      <div class="value" style="color:#1e293b">${data.rank}<span style="font-size:14px;font-weight:400;color:#64748b">e</span></div>
+      <div class="sub">sur ${data.totalStudents} élèves</div>
+    </div>` : ''}
+    <div class="summary-card">
+      <div class="label">Matières évaluées</div>
+      <div class="value" style="color:#1e293b">${subjectsWithGrades.length}<span style="font-size:14px;font-weight:400;color:#64748b">/${data.subjectGrades.length}</span></div>
+      <div class="sub">Total coeff. ${totalCoeffAll}</div>
+    </div>
   </div>
 
   ${data.teacherAppreciation ? `
   <div class="appreciation">
-    <div class="appreciation-title">Appréciation du Professeur Principal</div>
-    <p style="margin:0;color:#334155">${data.teacherAppreciation}</p>
+    <div class="title">📝 Appréciation du Professeur Principal</div>
+    <p>${data.teacherAppreciation}</p>
   </div>` : ''}
 
   ${data.principalAppreciation ? `
-  <div class="appreciation">
-    <div class="appreciation-title">Appréciation du Chef d'Établissement</div>
-    <p style="margin:0;color:#334155">${data.principalAppreciation}</p>
+  <div class="appreciation" style="border-left-color:#059669;margin-top:8px">
+    <div class="title" style="color:#059669">📋 Appréciation du Chef d'Établissement</div>
+    <p>${data.principalAppreciation}</p>
   </div>` : ''}
 
-  <div class="signature-section">
-    <div class="signature-box">
-      <div style="font-weight:600;font-size:12px">Le Professeur Principal</div>
-      <div class="signature-line">Signature</div>
+  <div class="signatures">
+    <div class="sig-box">
+      <div class="sig-title">Le Professeur Principal</div>
+      <div class="sig-line">Signature</div>
     </div>
-    <div class="signature-box">
-      <div style="font-weight:600;font-size:12px">Le Chef d'Établissement</div>
-      ${data.adminSigned ? '<div class="stamp">✓ Signé</div>' : ''}
-      <div class="signature-line">Signature et Cachet</div>
+    <div class="sig-box">
+      <div class="sig-title">Le Chef d'Établissement</div>
+      ${data.adminSigned ? '<div class="sig-stamp">✓ Visé et Approuvé</div>' : ''}
+      <div class="sig-line">Signature & Cachet</div>
     </div>
   </div>
+
+  <div class="footer">
+    ${data.schoolName} — Année académique ${data.academicYear} — Document généré le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+  </div>
+</div>
 </body></html>`;
 };
 
@@ -139,99 +230,4 @@ export const printBulletin = (data: BulletinPdfData) => {
   printWindow.onload = () => {
     printWindow.print();
   };
-};
-
-/**
- * Génère un Blob HTML du bulletin et l'upload dans le storage Supabase,
- * puis crée (ou met à jour) l'entrée correspondante dans la table `documents`.
- *
- * Retourne l'URL publique du fichier uploadé, ou null en cas d'erreur.
- */
-export const saveBulletinToDocuments = async (
-  data: BulletinPdfData & {
-    bulletinId: string;
-    studentId: string;
-    classId: string;
-    uploadedBy: string;
-    supabaseClient: any; // typed as any to avoid circular import
-  }
-): Promise<string | null> => {
-  try {
-    const html = generateBulletinHtml(data);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-
-    // Nom de fichier déterministe : on peut l'écraser à chaque regénération
-    const safeName = data.studentName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
-    const safePeriod = data.period.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
-    const filePath = `bulletins/${data.classId}/${safePeriod}/${safeName}_${data.bulletinId}.html`;
-
-    // Upload (upsert : écrase si déjà existant)
-    const { error: uploadError } = await data.supabaseClient.storage
-      .from('documents')
-      .upload(filePath, blob, {
-        contentType: 'text/html',
-        upsert: true,
-      });
-
-    if (uploadError) throw uploadError;
-
-    // URL publique
-    const { data: urlData } = data.supabaseClient.storage
-      .from('documents')
-      .getPublicUrl(filePath);
-
-    const publicUrl = urlData.publicUrl;
-
-    // Titre lisible
-    const docTitle = `Bulletin ${data.studentName} — ${data.period} (${data.academicYear})`;
-
-    // Vérifier si un document de ce bulletin existe déjà
-    const { data: existing } = await data.supabaseClient
-      .from('documents')
-      .select('id')
-      .eq('file_url', publicUrl)
-      .maybeSingle();
-
-    if (existing?.id) {
-      // Mettre à jour l'enregistrement existant
-      await data.supabaseClient
-        .from('documents')
-        .update({ title: docTitle, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-    } else {
-      // Chercher par student_id + period dans les métadonnées (via notes)
-      const { data: byStudent } = await data.supabaseClient
-        .from('documents')
-        .select('id')
-        .eq('doc_type', 'bulletin')
-        .eq('student_id', data.studentId)
-        .ilike('title', `%${data.period}%`)
-        .maybeSingle();
-
-      if (byStudent?.id) {
-        await data.supabaseClient
-          .from('documents')
-          .update({ title: docTitle, file_url: publicUrl })
-          .eq('id', byStudent.id);
-      } else {
-        // Créer un nouvel enregistrement
-        await data.supabaseClient
-          .from('documents')
-          .insert({
-            title: docTitle,
-            doc_type: 'bulletin',
-            file_url: publicUrl,
-            visibility: 'student',
-            class_id: data.classId,
-            student_id: data.studentId,
-            uploaded_by: data.uploadedBy,
-          });
-      }
-    }
-
-    return publicUrl;
-  } catch (err) {
-    console.error('[saveBulletinToDocuments]', err);
-    return null;
-  }
 };

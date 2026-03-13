@@ -12,13 +12,15 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { FileText, CheckCircle, Eye, Download, Printer } from "lucide-react";
-import { printBulletin, saveBulletinToDocuments } from "@/utils/bulletinPdf";
+import { printBulletin, generateBulletinHtml } from "@/utils/bulletinPdf";
 
 interface BulletinData {
   id: string;
   student_id: string;
+  class_id: string;
   student_name: string;
   student_matricule: string;
+  class_name: string;
   average: number | null;
   rank: number | null;
   total_students: number | null;
@@ -41,7 +43,7 @@ interface Class {
 const PERIODS = ["Trimestre 1", "Trimestre 2", "Trimestre 3"];
 
 const BulletinsPage = () => {
-  const { role, studentId, loading: authLoading } = useAuth();
+  const { role, user, studentId, loading: authLoading } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [bulletins, setBulletins] = useState<BulletinData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +71,7 @@ const BulletinsPage = () => {
     let query = supabase
       .from('bulletins')
       .select(`
-        id, student_id, average, rank, total_students, teacher_appreciation, principal_appreciation, admin_signature,
+        id, student_id, class_id, average, rank, total_students, teacher_appreciation, principal_appreciation, admin_signature,
         students!bulletins_student_id_fkey (
           matricule,
           profiles!students_profile_id_fkey (first_name, last_name)
@@ -115,7 +117,7 @@ const BulletinsPage = () => {
     // Process bulletins
     const processedBulletins: BulletinData[] = await Promise.all(
       (data || []).map(async (b: any) => {
-        const bulletinClassId = b.class_id || selectedClassId;
+        const bulletinClassId = b.class_id || (selectedClassId !== 'all' ? selectedClassId : null);
         
         // Get class level for coefficient resolution
         const bulletinClass = classes.find(c => c.id === bulletinClassId);
@@ -134,12 +136,16 @@ const BulletinsPage = () => {
         });
 
         // Get grades for this student in their class
-        const { data: grades } = await supabase
-          .from('grades')
-          .select('subject_id, value, max_value, coefficient')
-          .eq('student_id', b.student_id)
-          .eq('class_id', bulletinClassId)
-          .eq('period', selectedPeriod);
+        let grades: any[] = [];
+        if (bulletinClassId) {
+          const { data: gradesData } = await supabase
+            .from('grades')
+            .select('subject_id, value, max_value, coefficient')
+            .eq('student_id', b.student_id)
+            .eq('class_id', bulletinClassId)
+            .eq('period', selectedPeriod);
+          grades = gradesData || [];
+        }
 
         // Calculate subject averages
         const subjectGrades = (subjects || [])
@@ -148,7 +154,7 @@ const BulletinsPage = () => {
             return coeff > 0;
           })
           .map(subject => {
-            const studentGrades = (grades || []).filter(g => g.subject_id === subject.id);
+            const studentGrades = grades.filter(g => g.subject_id === subject.id);
             const coeff = coeffMap.get(subject.id) ?? subject.coefficient;
           
             if (studentGrades.length === 0) {
@@ -177,8 +183,10 @@ const BulletinsPage = () => {
         return {
           id: b.id,
           student_id: b.student_id,
+          class_id: bulletinClassId || b.class_id,
           student_name: `${b.students?.profiles?.first_name || ''} ${b.students?.profiles?.last_name || ''}`.trim(),
           student_matricule: b.students?.matricule || '',
+          class_name: b.classes?.name || '',
           average: b.average,
           rank: b.rank,
           total_students: b.total_students,
@@ -259,48 +267,6 @@ const BulletinsPage = () => {
     }
   }, [selectedClassId, selectedPeriod, authLoading, role, studentId]);
 
-  // Helper : resync le document pour un bulletin (après signature admin ou appréciation chef)
-  const resyncBulletinDocument = async (bulletin: BulletinData, overrides?: {
-    principalAppreciation?: string | null;
-    adminSigned?: boolean;
-  }) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Récupérer class_id depuis la table bulletins
-      const { data: bData } = await supabase
-        .from('bulletins')
-        .select('class_id')
-        .eq('id', bulletin.id)
-        .maybeSingle();
-      if (!bData?.class_id) return;
-
-      await saveBulletinToDocuments({
-        bulletinId: bulletin.id,
-        studentId: bulletin.student_id,
-        classId: bData.class_id,
-        uploadedBy: user.id,
-        supabaseClient: supabase,
-        schoolName: schoolSettings.school_name || 'École',
-        academicYear: schoolSettings.academic_year || '',
-        period: selectedPeriod,
-        studentName: bulletin.student_name,
-        studentMatricule: bulletin.student_matricule,
-        className: classes.find(c => c.id === selectedClassId)?.name || '',
-        average: bulletin.average,
-        rank: bulletin.rank,
-        totalStudents: bulletin.total_students,
-        teacherAppreciation: bulletin.teacher_appreciation,
-        principalAppreciation: overrides?.principalAppreciation ?? bulletin.principal_appreciation,
-        adminSigned: overrides?.adminSigned ?? bulletin.admin_signature,
-        subjectGrades: bulletin.subjectGrades,
-      });
-    } catch (err) {
-      console.error('[resyncBulletinDocument]', err);
-    }
-  };
-
   const handleSignBulletin = async (bulletinId: string) => {
     try {
       const { error } = await supabase
@@ -312,10 +278,6 @@ const BulletinsPage = () => {
         .eq('id', bulletinId);
 
       if (error) throw error;
-
-      // Resync le document avec la signature admin
-      const bulletin = bulletins.find(b => b.id === bulletinId);
-      if (bulletin) await resyncBulletinDocument(bulletin, { adminSigned: true });
 
       toast({ title: "Succès", description: "Bulletin signé avec succès" });
       fetchBulletins();
@@ -335,9 +297,6 @@ const BulletinsPage = () => {
 
       if (error) throw error;
 
-      // Resync le document avec la nouvelle appréciation du chef
-      await resyncBulletinDocument(selectedBulletin, { principalAppreciation });
-
       toast({ title: "Succès", description: "Appréciation enregistrée" });
       setIsViewDialogOpen(false);
       fetchBulletins();
@@ -346,23 +305,52 @@ const BulletinsPage = () => {
     }
   };
 
-  const handlePrintBulletin = (bulletin: BulletinData) => {
-    const selectedClass = classes.find(c => c.id === selectedClassId);
-    printBulletin({
-      schoolName: schoolSettings.school_name || 'École',
-      academicYear: schoolSettings.academic_year || '',
-      period: selectedPeriod,
-      studentName: bulletin.student_name,
-      studentMatricule: bulletin.student_matricule,
-      className: selectedClass?.name || '',
-      average: bulletin.average,
-      rank: bulletin.rank,
-      totalStudents: bulletin.total_students,
-      teacherAppreciation: bulletin.teacher_appreciation,
-      principalAppreciation: bulletin.principal_appreciation,
-      adminSigned: bulletin.admin_signature,
-      subjectGrades: bulletin.subjectGrades,
-    });
+  const getBulletinPdfData = (bulletin: BulletinData) => ({
+    schoolName: schoolSettings.school_name || 'École',
+    academicYear: schoolSettings.academic_year || '',
+    period: selectedPeriod,
+    studentName: bulletin.student_name,
+    studentMatricule: bulletin.student_matricule,
+    className: bulletin.class_name || classes.find(c => c.id === selectedClassId)?.name || '',
+    average: bulletin.average,
+    rank: bulletin.rank,
+    totalStudents: bulletin.total_students,
+    teacherAppreciation: bulletin.teacher_appreciation,
+    principalAppreciation: bulletin.principal_appreciation,
+    adminSigned: bulletin.admin_signature,
+    subjectGrades: bulletin.subjectGrades,
+  });
+
+  const handlePrintBulletin = async (bulletin: BulletinData) => {
+    const pdfData = getBulletinPdfData(bulletin);
+    printBulletin(pdfData);
+
+    if (role !== 'admin' && role !== 'teacher') return;
+
+    try {
+      const html = generateBulletinHtml(pdfData);
+      const docTitle = `Bulletin ${bulletin.student_name} - ${selectedPeriod}`;
+
+      const { error } = await supabase.functions.invoke('save-bulletin-document', {
+        body: {
+          title: docTitle,
+          html,
+          period: selectedPeriod,
+          studentId: bulletin.student_id,
+          classId: bulletin.class_id,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Succès", description: "Bulletin archivé dans Documents" });
+    } catch (error: any) {
+      toast({
+        title: "Archivage impossible",
+        description: error?.message || "Le bulletin a été imprimé mais n'a pas pu être ajouté dans Documents",
+        variant: "destructive",
+      });
+    }
   };
 
   const getGradeClass = (value: number) => {

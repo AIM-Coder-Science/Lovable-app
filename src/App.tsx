@@ -22,6 +22,7 @@ import Administration from "./pages/Administration";
 import Invoices from "./pages/Invoices";
 import Events from "./pages/Events";
 import Articles from "./pages/Articles";
+import Salles from "./pages/Salles";
 import Profile from "./pages/Profile";
 import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/events" element={<Events />} />
           <Route path="/articles" element={<Articles />} />
+          <Route path="/salles" element={<Salles />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/chat" element={<Chat />} />

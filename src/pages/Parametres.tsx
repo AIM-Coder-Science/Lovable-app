@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { 
   Settings, User, Lock, School, Sliders, CreditCard, Shield,
-  ChevronRight, Save, MessageCircle
+  ChevronRight, Save, MessageCircle, CalendarDays
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AdminManagement } from "@/components/admin/AdminManagement";
@@ -40,6 +41,7 @@ const sections: NavSection[] = [
 ];
 
 const Parametres = () => {
+  const navigate = useNavigate();
   const { user, profileId, role, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState("profile");
@@ -520,6 +522,26 @@ const Parametres = () => {
                     </p>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4" />
+                  Emploi du temps
+                </CardTitle>
+                <CardDescription>Définir les horaires des enseignants et des apprenants</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => navigate("/timetable")}
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  Ouvrir la gestion des emplois du temps
+                </Button>
               </CardContent>
             </Card>
 

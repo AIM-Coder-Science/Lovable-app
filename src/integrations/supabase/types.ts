@@ -845,6 +845,117 @@ export type Database = {
         }
         Relationships: []
       }
+      room_reservations: {
+        Row: {
+          admin_modified_end_time: string | null
+          admin_modified_room_id: string | null
+          admin_modified_start_time: string | null
+          admin_notes: string | null
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          day_of_week: number | null
+          end_time: string
+          event_type: string
+          id: string
+          reason: string
+          requested_by: string
+          room_id: string
+          specific_date: string | null
+          start_time: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          admin_modified_end_time?: string | null
+          admin_modified_room_id?: string | null
+          admin_modified_start_time?: string | null
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          day_of_week?: number | null
+          end_time: string
+          event_type?: string
+          id?: string
+          reason: string
+          requested_by: string
+          room_id: string
+          specific_date?: string | null
+          start_time: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          admin_modified_end_time?: string | null
+          admin_modified_room_id?: string | null
+          admin_modified_start_time?: string | null
+          admin_notes?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          day_of_week?: number | null
+          end_time?: string
+          event_type?: string
+          id?: string
+          reason?: string
+          requested_by?: string
+          room_id?: string
+          specific_date?: string | null
+          start_time?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_reservations_admin_modified_room_id_fkey"
+            columns: ["admin_modified_room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "room_reservations_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rooms: {
+        Row: {
+          capacity: number
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          room_type: string
+          updated_at: string
+        }
+        Insert: {
+          capacity?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          room_type?: string
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          room_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sanctions: {
         Row: {
           class_id: string
@@ -1331,6 +1442,7 @@ export type Database = {
           end_time: string
           id: string
           room: string | null
+          room_id: string | null
           start_time: string
           subject_id: string
           teacher_id: string
@@ -1343,6 +1455,7 @@ export type Database = {
           end_time: string
           id?: string
           room?: string | null
+          room_id?: string | null
           start_time: string
           subject_id: string
           teacher_id: string
@@ -1355,6 +1468,7 @@ export type Database = {
           end_time?: string
           id?: string
           room?: string | null
+          room_id?: string | null
           start_time?: string
           subject_id?: string
           teacher_id?: string
@@ -1365,6 +1479,13 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timetable_slots_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
             referencedColumns: ["id"]
           },
           {
@@ -1447,6 +1568,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_chat_room_member: {
+        Args: { _room_id: string; _user_id: string }
         Returns: boolean
       }
       is_principal_of_class: {

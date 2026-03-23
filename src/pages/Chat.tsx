@@ -89,26 +89,28 @@ const Chat = () => {
     setLoading(true);
 
     const { data, error } = await supabase
-      .from('chat_room_members')
-      .select('room_id, chat_rooms(id, name, room_type, class_id)')
-      .eq('user_id', user.id);
+      .from('chat_rooms')
+      .select('id, name, room_type, class_id')
+      .order('name', { ascending: true });
 
     if (error) {
-      toast({ title: "Erreur", description: "Impossible de charger les salons de discussion", variant: "destructive" });
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de charger les salons de discussion",
+        variant: "destructive",
+      });
       setRooms([]);
       setSelectedRoom(null);
       setLoading(false);
       return;
     }
 
-    const roomList: ChatRoom[] = (data || [])
-      .filter((d: any) => d.chat_rooms)
-      .map((d: any) => ({
-        id: d.chat_rooms.id,
-        name: d.chat_rooms.name,
-        room_type: d.chat_rooms.room_type,
-        class_id: d.chat_rooms.class_id,
-      }));
+    const roomList: ChatRoom[] = (data || []).map((room: any) => ({
+      id: room.id,
+      name: room.name,
+      room_type: room.room_type,
+      class_id: room.class_id,
+    }));
 
     const uniqueRooms = Array.from(new Map(roomList.map((room) => [room.id, room])).values());
     setRooms(uniqueRooms);

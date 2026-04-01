@@ -1006,29 +1006,37 @@ export type Database = {
       }
       rooms: {
         Row: {
+          building: string | null
           capacity: number
           created_at: string
           description: string | null
+          floor: string | null
           id: string
           is_active: boolean
           name: string
+          room_code: string | null
           room_type: string
           updated_at: string
         }
         Insert: {
+          building?: string | null
           capacity?: number
           created_at?: string
           description?: string | null
+          floor?: string | null
           id?: string
           is_active?: boolean
-          name: string
+          name?: string
+          room_code?: string | null
           room_type?: string
           updated_at?: string
         }
         Update: {
+          building?: string | null
           capacity?: number
           created_at?: string
           description?: string | null
+          floor?: string | null
           id?: string
           is_active?: boolean
           name?: string

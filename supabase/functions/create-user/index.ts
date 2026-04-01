@@ -186,12 +186,14 @@ serve(async (req) => {
       const { data: matriculeData, error: matriculeError } = await supabaseAdmin
         .rpc('generate_matricule', { p_prefix: prefix });
       
-      if (matriculeError) {
-        return new Response(JSON.stringify({ error: 'Erreur lors de la génération du matricule' }), {
-          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      if (matriculeError || !matriculeData) {
+        // Fallback: generate a matricule locally if RPC doesn't exist
+        const year = new Date().getFullYear().toString().slice(-2);
+        const rand = Math.floor(Math.random() * 9000) + 1000;
+        finalMatricule = `${prefix}${year}${rand}`;
+      } else {
+        finalMatricule = matriculeData;
       }
-      finalMatricule = matriculeData;
     }
 
     const matriculeNumbers = finalMatricule.replace(/\D/g, '');

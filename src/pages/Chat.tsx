@@ -142,20 +142,24 @@ const Chat = () => {
     }
 
     const senderIds = [...new Set((data || []).map((m: any) => m.sender_id))];
+    
+    // Fetch profiles with fallback to user_credentials email prefix
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('user_id, first_name, last_name')
+      .select('user_id, first_name, last_name, email')
       .in('user_id', senderIds);
 
     const nameMap: Record<string, string> = {};
     profiles?.forEach((p: any) => {
-      nameMap[p.user_id] = `${p.first_name} ${p.last_name}`;
+      const fullName = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+      // Use email prefix as last resort if name fields are empty
+      nameMap[p.user_id] = fullName || (p.email ? p.email.split('@')[0] : 'Utilisateur');
     });
     setProfilesMap(prev => ({ ...prev, ...nameMap }));
 
     setMessages((data || []).map((m: any) => ({
       ...m,
-      sender_name: nameMap[m.sender_id] || 'Inconnu',
+      sender_name: nameMap[m.sender_id] || profilesMap[m.sender_id] || 'Utilisateur',
     })));
   };
 
@@ -183,7 +187,7 @@ const Chat = () => {
             .select('first_name, last_name')
             .eq('user_id', msg.sender_id)
             .maybeSingle();
-          senderName = profile ? `${profile.first_name} ${profile.last_name}` : 'Inconnu';
+          senderName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim() || 'Utilisateur' : 'Utilisateur';
           setProfilesMap(prev => ({ ...prev, [msg.sender_id]: senderName! }));
         }
         setMessages(prev => [...prev, { ...msg, sender_name: senderName }]);

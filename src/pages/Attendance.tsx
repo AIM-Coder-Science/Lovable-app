@@ -50,7 +50,7 @@ const Attendance = () => {
 
   // Stats
   const stats = Object.values(records);
-  const presentCount = stats.filter(r => r.status === "present").length;
+  const presentCount = stats.filter(r => r.status === "present" || r.status === "late").length;
   const absentCount = stats.filter(r => r.status === "absent").length;
   const lateCount = stats.filter(r => r.status === "late").length;
 
@@ -132,10 +132,12 @@ const Attendance = () => {
     const current = records[studentId]?.status || "present";
     const order: ("present" | "absent" | "late" | "excused")[] = ["present", "absent", "late", "excused"];
     const next = order[(order.indexOf(current) + 1) % order.length];
+    // "absent" and "excused" can optionally have a reason; "late" is always present+late, no dialog needed
     if (next === "absent" || next === "excused") {
       setReasonDialog({ studentId, status: next });
       setReasonText(records[studentId]?.reason || "");
     } else {
+      // "present" or "late" — set directly, no dialog
       setRecords(prev => ({ ...prev, [studentId]: { ...prev[studentId], status: next, reason: "" } }));
     }
   };
@@ -155,15 +157,17 @@ const Attendance = () => {
   };
 
   const handleSave = async () => {
-    if (!selectedClass || !selectedSubject) {
-      toast({ title: "Erreur", description: "Sélectionnez une classe et une matière", variant: "destructive" });
+    if (!selectedClass) {
+      toast({ title: "Erreur", description: "Sélectionnez une classe", variant: "destructive" });
       return;
     }
     setSaving(true);
     try {
-      // Delete existing for this class/date/subject
-      await (supabase as any).from("attendance").delete()
-        .eq("class_id", selectedClass).eq("date", selectedDate).eq("subject_id", selectedSubject);
+      // Delete existing for this class/date (+ subject if selected)
+      let deleteQuery = (supabase as any).from("attendance").delete()
+        .eq("class_id", selectedClass).eq("date", selectedDate);
+      if (selectedSubject) deleteQuery = deleteQuery.eq("subject_id", selectedSubject);
+      await deleteQuery;
 
       const rows = Object.values(records).map(r => ({
         student_id: r.student_id,
@@ -177,7 +181,7 @@ const Attendance = () => {
 
       const { error } = await (supabase as any).from("attendance").insert(rows);
       if (error) throw error;
-      toast({ title: "Présences enregistrées", description: `${presentCount} présents, ${absentCount} absents, ${lateCount} en retard` });
+      toast({ title: "Présences enregistrées", description: `${presentCount} présents (dont ${lateCount} en retard), ${absentCount} absents` });
     } catch (e: any) {
       toast({ title: "Erreur", description: e.message, variant: "destructive" });
     }
@@ -305,7 +309,7 @@ const Attendance = () => {
                 </Table>
               </div>
               <div className="flex justify-end mt-4">
-                <Button onClick={handleSave} disabled={saving || !selectedSubject} className="gap-2">
+                <Button onClick={handleSave} disabled={saving} className="gap-2">
                   <Save className="w-4 h-4" />{saving ? "Enregistrement..." : "Enregistrer les présences"}
                 </Button>
               </div>

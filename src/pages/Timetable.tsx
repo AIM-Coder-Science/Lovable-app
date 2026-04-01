@@ -580,7 +580,7 @@ const Timetable = () => {
             </Tabs>
           )}
 
-          {viewMode === "class" && (
+          {viewMode === "class" && role === "admin" && (
             <Select value={selectedClass} onValueChange={setSelectedClass}>
               <SelectTrigger className="w-[200px]"><SelectValue placeholder="Classe" /></SelectTrigger>
               <SelectContent>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>

@@ -177,9 +177,13 @@ const Salles = () => {
     if (!roomForm.room_code.trim() || !roomForm.name.trim()) {
       toast({ title: "Champs requis", description: "Le code et le nom sont obligatoires.", variant: "destructive" }); return;
     }
+    // Auto-derive name if left blank: "Salle S-01" or "Laboratoire LAB-02"
+    const derivedName = roomForm.name.trim() ||
+      `${getRoomTypeLabel(roomForm.room_type)} ${roomForm.room_code.trim().toUpperCase()}` +
+      (roomForm.building ? ` — ${roomForm.building.trim()}` : "");
     const payload = {
       room_code: roomForm.room_code.trim().toUpperCase(),
-      name: roomForm.name.trim(), capacity: roomForm.capacity,
+      name: derivedName, capacity: roomForm.capacity,
       room_type: roomForm.room_type,
       floor: roomForm.floor.trim() || null, building: roomForm.building.trim() || null,
       description: roomForm.description.trim() || null, is_active: roomForm.is_active,
@@ -409,7 +413,7 @@ const Salles = () => {
                 <DialogTrigger asChild>
                   <Button className="gap-2"><Plus className="w-4 h-4" />Ajouter une salle</Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-lg">
+                <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>{editingRoom ? "Modifier la salle" : "Nouvelle salle"}</DialogTitle></DialogHeader>
                   <div className="space-y-4 mt-4">
 
@@ -460,9 +464,9 @@ const Salles = () => {
                     </div>
 
                     <div>
-                      <Label>Nom de la salle *</Label>
+                      <Label>Nom de la salle <span className="text-muted-foreground text-xs">(optionnel — déduit du code si vide)</span></Label>
                       <Input value={roomForm.name} onChange={e => setRoomForm({ ...roomForm, name: e.target.value })}
-                        placeholder="Ex: Salle de Mathématiques, Labo de Chimie..."
+                        placeholder="Ex: Salle de Mathématiques, Labo de Chimie... (auto si vide)"
                         className={nameConflict ? "border-destructive" : ""} />
                       {nameConflict && <p className="text-xs text-destructive mt-1">Ce nom est déjà utilisé.</p>}
                     </div>
@@ -500,7 +504,7 @@ const Salles = () => {
                     )}
 
                     <Button onClick={handleSaveRoom} className="w-full"
-                      disabled={!roomForm.room_code || !roomForm.name || codeConflict || nameConflict}>
+                      disabled={!roomForm.room_code || codeConflict || nameConflict}>
                       {editingRoom ? "Enregistrer les modifications" : "Créer la salle"}
                     </Button>
                   </div>

@@ -196,16 +196,16 @@ const Apprenants = () => {
 
   const handleAssignClass = async () => {
     if (!selectedStudent) return;
-
+    const newClassId = (formData.classId === "__none__" || !formData.classId) ? null : formData.classId;
     try {
       const { error } = await supabase
         .from('students')
-        .update({ class_id: formData.classId || null })
+        .update({ class_id: newClassId })
         .eq('id', selectedStudent.id);
 
       if (error) throw error;
 
-      toast({ title: "Succès", description: "Classe assignée avec succès" });
+      toast({ title: "Classe mise à jour", description: "La classe de l'apprenant a été modifiée." });
       setIsAssignDialogOpen(false);
       setSelectedStudent(null);
       setFormData(prev => ({ ...prev, classId: "" }));
@@ -584,12 +584,12 @@ const Apprenants = () => {
             <div className="space-y-4 mt-4">
               <div>
                 <Label>Classe</Label>
-                <Select value={formData.classId} onValueChange={v => setFormData({...formData, classId: v})}>
+                <Select value={formData.classId || "__none__"} onValueChange={v => setFormData({...formData, classId: v === "__none__" ? "" : v})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionner une classe" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Aucune classe</SelectItem>
+                    <SelectItem value="__none__">— Aucune classe —</SelectItem>
                     {classes.map(c => (
                       <SelectItem key={c.id} value={c.id}>{c.name} ({c.level})</SelectItem>
                     ))}

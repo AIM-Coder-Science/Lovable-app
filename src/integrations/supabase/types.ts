@@ -124,6 +124,87 @@ export type Database = {
           },
         ]
       }
+      attendance: {
+        Row: {
+          class_id: string
+          created_at: string
+          date: string
+          id: string
+          reason: string | null
+          recorded_by: string | null
+          status: string
+          student_id: string
+          subject_id: string
+          teacher_id: string | null
+          timetable_slot_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          date?: string
+          id?: string
+          reason?: string | null
+          recorded_by?: string | null
+          status?: string
+          student_id: string
+          subject_id: string
+          teacher_id?: string | null
+          timetable_slot_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          date?: string
+          id?: string
+          reason?: string | null
+          recorded_by?: string | null
+          status?: string
+          student_id?: string
+          subject_id?: string
+          teacher_id?: string | null
+          timetable_slot_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "teachers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_timetable_slot_id_fkey"
+            columns: ["timetable_slot_id"]
+            isOneToOne: false
+            referencedRelation: "timetable_slots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bulletins: {
         Row: {
           academic_year: string
@@ -1204,23 +1285,35 @@ export type Database = {
         Row: {
           coefficient: number
           created_at: string
+          hours_per_week: number
           id: string
           is_active: boolean
+          is_single_session_only: boolean
+          max_sessions_per_week: number
           name: string
+          preferred_block_size: number
         }
         Insert: {
           coefficient?: number
           created_at?: string
+          hours_per_week?: number
           id?: string
           is_active?: boolean
+          is_single_session_only?: boolean
+          max_sessions_per_week?: number
           name: string
+          preferred_block_size?: number
         }
         Update: {
           coefficient?: number
           created_at?: string
+          hours_per_week?: number
           id?: string
           is_active?: boolean
+          is_single_session_only?: boolean
+          max_sessions_per_week?: number
           name?: string
+          preferred_block_size?: number
         }
         Relationships: []
       }
@@ -1398,9 +1491,12 @@ export type Database = {
           employee_id: string | null
           id: string
           is_active: boolean
+          max_hours_per_day: number
+          max_hours_per_week: number
           principal_score: number | null
           profile_id: string
           score: number | null
+          unavailable_slots: Json | null
           user_id: string
         }
         Insert: {
@@ -1408,9 +1504,12 @@ export type Database = {
           employee_id?: string | null
           id?: string
           is_active?: boolean
+          max_hours_per_day?: number
+          max_hours_per_week?: number
           principal_score?: number | null
           profile_id: string
           score?: number | null
+          unavailable_slots?: Json | null
           user_id: string
         }
         Update: {
@@ -1418,9 +1517,12 @@ export type Database = {
           employee_id?: string | null
           id?: string
           is_active?: boolean
+          max_hours_per_day?: number
+          max_hours_per_week?: number
           principal_score?: number | null
           profile_id?: string
           score?: number | null
+          unavailable_slots?: Json | null
           user_id?: string
         }
         Relationships: [
@@ -1429,6 +1531,101 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timetable_constraints: {
+        Row: {
+          constraint_name: string
+          created_at: string
+          days_of_week: number[]
+          id: string
+          is_active: boolean
+          lunch_end: string
+          lunch_start: string
+          max_consecutive_hours: number
+          period_end: string
+          period_start: string
+          updated_at: string
+        }
+        Insert: {
+          constraint_name?: string
+          created_at?: string
+          days_of_week?: number[]
+          id?: string
+          is_active?: boolean
+          lunch_end?: string
+          lunch_start?: string
+          max_consecutive_hours?: number
+          period_end?: string
+          period_start?: string
+          updated_at?: string
+        }
+        Update: {
+          constraint_name?: string
+          created_at?: string
+          days_of_week?: number[]
+          id?: string
+          is_active?: boolean
+          lunch_end?: string
+          lunch_start?: string
+          max_consecutive_hours?: number
+          period_end?: string
+          period_start?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      timetable_generations: {
+        Row: {
+          applied_at: string | null
+          class_id: string
+          conflicts_count: number
+          conflicts_details: Json | null
+          created_at: string
+          generated_at: string
+          id: string
+          is_active: boolean
+          slots_count: number
+          slots_data: Json | null
+          status: string
+          version: number
+        }
+        Insert: {
+          applied_at?: string | null
+          class_id: string
+          conflicts_count?: number
+          conflicts_details?: Json | null
+          created_at?: string
+          generated_at?: string
+          id?: string
+          is_active?: boolean
+          slots_count?: number
+          slots_data?: Json | null
+          status?: string
+          version?: number
+        }
+        Update: {
+          applied_at?: string | null
+          class_id?: string
+          conflicts_count?: number
+          conflicts_details?: Json | null
+          created_at?: string
+          generated_at?: string
+          id?: string
+          is_active?: boolean
+          slots_count?: number
+          slots_data?: Json | null
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timetable_generations_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
             referencedColumns: ["id"]
           },
         ]

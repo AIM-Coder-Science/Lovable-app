@@ -31,6 +31,7 @@ import {
   UserCircle,
   Inbox,
   MessageCircle,
+  ClipboardCheck,
 } from "lucide-react";
 
 type UserRole = "admin" | "teacher" | "student";
@@ -62,6 +63,7 @@ const navItems: NavItem[] = [
   { icon: School, label: "Classes", href: "/classes", roles: ["admin"] },
   { icon: BookOpen, label: "Matières", href: "/matieres", roles: ["admin"] },
   { icon: ClipboardList, label: "Notes", href: "/notes", roles: ["teacher"] },
+  { icon: ClipboardCheck, label: "Présences", href: "/attendance", roles: ["admin", "teacher"] },
   { icon: ClipboardList, label: "Mes Notes", href: "/mes-notes", roles: ["student"] },
   { icon: Star, label: "Appréciations", href: "/appreciations", roles: ["teacher"], principalOnly: true },
   { icon: FileText, label: "Bulletins", href: "/bulletins", roles: ["admin", "teacher", "student"], principalOnly: false },

@@ -23,6 +23,7 @@ import { FeeArticlesSettings } from "@/components/settings/FeeArticlesSettings";
 import { TeacherRatesSettings } from "@/components/settings/TeacherRatesSettings";
 import { PaymentReminderSettings } from "@/components/settings/PaymentReminderSettings";
 import { ProfileEditSettings } from "@/components/settings/ProfileEditSettings";
+import { TimetableSettings } from "@/components/settings/TimetableSettings";
 
 interface NavSection {
   id: string;
@@ -531,16 +532,18 @@ const Parametres = () => {
                   <CalendarDays className="w-4 h-4" />
                   Emploi du temps
                 </CardTitle>
-                <CardDescription>Définir les horaires des enseignants et des apprenants</CardDescription>
+                <CardDescription>Configurez les heures de matières, disponibilités enseignants et contraintes</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <TimetableSettings />
+                <Separator />
                 <Button
                   variant="outline"
                   className="gap-2"
                   onClick={() => navigate("/timetable")}
                 >
                   <CalendarDays className="w-4 h-4" />
-                  Ouvrir la gestion des emplois du temps
+                  Ouvrir la vue emploi du temps
                 </Button>
               </CardContent>
             </Card>
